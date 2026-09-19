@@ -1,0 +1,26 @@
+# Web backend
+fastapi==0.115.0
+uvicorn[standard]==0.30.6
+pydantic==2.9.2
+python-multipart==0.0.9
+
+# Speech recognition (pretrained Whisper, inference only)
+faster-whisper==1.0.3
+
+# Text embeddings (pretrained sentence-transformer, inference only)
+sentence-transformers==3.1.1
+
+# Visual embeddings (pretrained CLIP, inference only)
+open_clip_torch==2.26.1
+torch==2.4.1
+
+# Vector similarity search
+faiss-cpu==1.8.0
+
+# Video/image processing
+opencv-python==4.10.0.84
+Pillow==10.4.0
+numpy==1.26.4
+
+# Video downloading (used earlier to build the dataset)
+yt-dlp

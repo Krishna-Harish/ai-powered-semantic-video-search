@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>AI Video Search</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <header>
+    <h1>AI Video Search</h1>
+    <p class="subtitle">Semantic search inside your video collection</p>
+  </header>
+
+  <main>
+    <section class="video-panel">
+      <div class="video-select-row">
+        <label for="videoSelect">Video:</label>
+        <select id="videoSelect"></select>
+      </div>
+      <video id="videoPlayer" controls></video>
+    </section>
+
+    <section class="search-panel">
+      <div class="mode-toggle">
+        <button id="textModeBtn" class="mode-btn active">Text Search</button>
+        <button id="visualModeBtn" class="mode-btn">Visual Search</button>
+      </div>
+
+      <div class="search-box">
+        <input type="text" id="queryInput" placeholder="e.g. Where is gradient descent explained?">
+        <button id="searchBtn">Search</button>
+      </div>
+
+      <p id="statusMsg" class="status"></p>
+
+      <div id="resultsList" class="results-list"></div>
+    </section>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>
