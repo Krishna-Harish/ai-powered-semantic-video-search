@@ -124,13 +124,11 @@ YOUTUBE_MAX_DURATION_SECONDS = 2 * 60 * 60
 # LLM summary / Q&A settings
 # ---------------------------------------------------------------------------
 
-# Which LLM generates summaries and answers:
-#   "auto"      -- Claude if ANTHROPIC_API_KEY is set, otherwise Gemini if
-#                  GEMINI_API_KEY (or GOOGLE_API_KEY) is set
-#   "gemini"    -- always Gemini (free tier key: https://aistudio.google.com/apikey)
-#   "anthropic" -- always Claude (paid API key)
-#   "ollama"    -- a local model through Ollama (free, offline, no key);
-#                  "auto" also falls back to it when no API key is set
+# Which LLM generates summaries, answers and quizzes:
+#   "auto"   -- Gemini if GEMINI_API_KEY (or GOOGLE_API_KEY) is set,
+#               otherwise a local Ollama model
+#   "gemini" -- always Gemini (free key: https://aistudio.google.com/apikey)
+#   "ollama" -- always the local Ollama model (free, offline, no key)
 LLM_PROVIDER = os.environ.get("LLM_PROVIDER", "auto")
 
 # Ollama (https://ollama.com): run `ollama pull llama3.2` once, then keep the
@@ -145,16 +143,11 @@ OLLAMA_TIMEOUT_SECONDS = 600    # local models on CPU can be slow
 # model, which is available on the free tier.
 GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-flash-latest")
 
-# Claude model and thinking depth (low | medium | high | xhigh | max).
-LLM_MODEL = "claude-opus-5-5"
-
-LLM_EFFORT = "medium"
-
 LLM_MAX_OUTPUT_TOKENS = 16000
 
-# Transcripts longer than this (characters of "[mm:ss] text" lines) are
-# summarized window-by-window and then combined, instead of in one request.
-LLM_TRANSCRIPT_WINDOW_CHARS = 200_000
+# Longest transcript (characters of "[mm:ss] text" lines, roughly an hour of
+# speech) summarized in one request. Longer videos: summarize a section.
+LLM_MAX_TRANSCRIPT_CHARS = 60_000
 
 # Number of transcript chunks retrieved as evidence for a grounded answer.
 LLM_QA_TOP_K = 8

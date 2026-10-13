@@ -2,16 +2,14 @@
 llm.py
 
 One function, generate_json(), that sends a prompt to an LLM and returns
-JSON matching a schema. Three providers are supported:
+JSON matching a schema. Two free providers are supported:
 
-    anthropic -- Claude API (paid), used when ANTHROPIC_API_KEY is set
-    gemini    -- Google Gemini API (has a free tier), used when
-                 GEMINI_API_KEY (or GOOGLE_API_KEY) is set
-    ollama    -- a local model served by Ollama (free, offline, no key)
+    gemini -- Google Gemini API (free tier), used when GEMINI_API_KEY
+              (or GOOGLE_API_KEY) is set
+    ollama -- a local model served by Ollama (offline, no key)
 
-LLM_PROVIDER in config.py chooses: "auto" (default) prefers Claude when its
-key is set, then Gemini when its key is set, and otherwise uses a local
-Ollama model, so no paid API (or any key at all) is required.
+LLM_PROVIDER in config.py chooses: "auto" (default) uses Gemini when its
+key is set and otherwise a local Ollama model, so no key is required.
 """
 
 import os
@@ -24,8 +22,6 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(
 
 from backend.config import (
     LLM_PROVIDER,
-    LLM_MODEL,
-    LLM_EFFORT,
     GEMINI_MODEL,
     LLM_MAX_OUTPUT_TOKENS,
     OLLAMA_HOST,
@@ -47,20 +43,14 @@ class LLMUnavailableError(LLMError):
     pass
 
 
-def _has_anthropic_key() -> bool:
-    return bool(os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_AUTH_TOKEN"))
-
-
 def _gemini_key():
     return os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
 
 
 def active_provider():
-    """Returns "anthropic", "gemini" or "ollama" (the keyless local fallback)."""
-    if LLM_PROVIDER in ("anthropic", "gemini", "ollama"):
+    """Returns "gemini" or "ollama" (the keyless local fallback)."""
+    if LLM_PROVIDER in ("gemini", "ollama"):
         return LLM_PROVIDER
-    if _has_anthropic_key():
-        return "anthropic"
     if _gemini_key():
         return "gemini"
     return "ollama"
@@ -68,13 +58,11 @@ def active_provider():
 
 def active_model():
     provider = active_provider()
-    return {"anthropic": LLM_MODEL, "gemini": GEMINI_MODEL, "ollama": OLLAMA_MODEL}[provider]
+    return {"gemini": GEMINI_MODEL, "ollama": OLLAMA_MODEL}[provider]
 
 
 def generate_json(system: str, prompt: str, schema: dict) -> dict:
     provider = active_provider()
-    if provider == "anthropic":
-        return _anthropic_json(system, prompt, schema)
     if provider == "gemini":
         return _gemini_json(system, prompt, schema)
     return _ollama_json(system, prompt, schema)
@@ -87,59 +75,6 @@ def _parse_json(text):
         return json.loads(text)
     except json.JSONDecodeError:
         raise LLMError("The model returned invalid JSON.")
-
-
-# ---------------------------------------------------------------------------
-# Claude (Anthropic)
-# ---------------------------------------------------------------------------
-
-def _anthropic_json(system: str, prompt: str, schema: dict) -> dict:
-    try:
-        import anthropic
-    except ImportError:
-        raise LLMUnavailableError("The anthropic package is not installed. Run: pip install anthropic")
-
-    if "anthropic" not in _clients:
-        _clients["anthropic"] = anthropic.Anthropic()
-    client = _clients["anthropic"]
-
-    try:
-        response = client.beta.messages.create(
-            model=LLM_MODEL,
-            max_tokens=LLM_MAX_OUTPUT_TOKENS,
-            system=system,
-            messages=[{"role": "user", "content": prompt}],
-            output_config={
-                "effort": LLM_EFFORT,
-                "format": {"type": "json_schema", "schema": schema},
-            },
-            # If a safety classifier declines, retry server-side on Anthropic's
-            # recommended fallback model instead of returning a refusal.
-            betas=["server-side-fallback-2026-07-01"],
-            fallbacks="default",
-        )
-    except anthropic.AuthenticationError:
-        raise LLMUnavailableError("Claude API authentication failed. Check ANTHROPIC_API_KEY.")
-    except anthropic.PermissionDeniedError as e:
-        raise LLMUnavailableError(f"Claude API permission denied: {e.message}")
-    except anthropic.RateLimitError:
-        raise LLMUnavailableError("Claude API rate limit reached. Try again shortly.")
-    except anthropic.APIStatusError as e:
-        raise LLMError(f"Claude API error ({e.status_code}): {e.message}")
-    except anthropic.APIConnectionError:
-        raise LLMUnavailableError("Could not connect to the Claude API.")
-    except TypeError as e:
-        # The SDK raises TypeError when no credentials are configured at all.
-        if "authentication" not in str(e):
-            raise
-        raise LLMUnavailableError("Claude API is not configured. Set ANTHROPIC_API_KEY.")
-
-    if response.stop_reason == "refusal":
-        raise LLMError("The model declined to process this transcript.")
-    if response.stop_reason == "max_tokens":
-        raise LLMError("The model's response was cut off. Try a shorter section.")
-
-    return _parse_json(next((b.text for b in response.content if b.type == "text"), None))
 
 
 # ---------------------------------------------------------------------------

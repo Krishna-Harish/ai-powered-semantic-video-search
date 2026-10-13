@@ -13,7 +13,7 @@ FastAPI backend exposing:
     POST /ingest/reindex/{video_id} -- (re)index an already-downloaded video
     POST /summarize        -- LLM summary / key takeaways / section summary
     POST /ask              -- LLM answer grounded in transcript passages
-                              (Gemini free tier, Claude or local Ollama, see services/llm.py)
+                              (Gemini free tier or local Ollama, see services/llm.py)
     POST /quiz/generate    -- AI quiz from a video's transcript (answers stay on the server)
     GET  /quiz/{quiz_id}   -- a generated quiz, without answers
     POST /quiz/{quiz_id}/submit -- score answers; returns answers, explanations, timestamps

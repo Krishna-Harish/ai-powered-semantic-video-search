@@ -3,7 +3,7 @@ tests/test_new_features.py
 
 Tests for YouTube ingestion, timestamp playback and LLM summaries that run
 without network access, an API key, or torch/faiss/whisper: yt-dlp, the
-indexing pipeline and the Claude API call are replaced with fakes.
+indexing pipeline and the LLM call are replaced with fakes.
 
 Run with:  python -m pytest tests/ -v
 """
@@ -351,13 +351,9 @@ class TestTranscriptHelpers(unittest.TestCase):
         self.assertEqual(summarizer.snap_to_segment(40, self.SEGMENTS), 12.0)  # gap: nearest edge (ends at 20)
         self.assertEqual(summarizer.snap_to_segment(999, self.SEGMENTS), 65.0)
 
-    def test_format_and_windows(self):
+    def test_format_transcript(self):
         text = summarizer.format_transcript(self.SEGMENTS[:2])
         self.assertEqual(text, "[00:00] intro\n[00:05] gradient descent")
-        windows = summarizer.split_into_windows(self.SEGMENTS, max_chars=30)
-        self.assertGreater(len(windows), 1)
-        self.assertEqual(sum(len(w) for w in windows), len(self.SEGMENTS))
-        self.assertEqual([s for w in windows for s in w], self.SEGMENTS)
 
 
 class TestSummarize(unittest.TestCase):
@@ -434,13 +430,15 @@ class TestSummarize(unittest.TestCase):
         with self.assertRaises(ValueError):
             summarizer.summarize(self.VIDEO_ID, "bogus")
 
-    def test_long_transcript_is_map_reduced(self):
+    def test_too_long_transcript_asks_for_a_section(self):
         calls = []
         with mock.patch.object(summarizer, "_call_llm", self.fake_llm(calls)), \
-             mock.patch.object(summarizer, "LLM_TRANSCRIPT_WINDOW_CHARS", 60):
-            summarizer.summarize(self.VIDEO_ID, "takeaways")
-        self.assertGreater(len(calls), 2)            # several windows + one combine step
-        self.assertIn("<part_summaries>", calls[-1])
+             mock.patch.object(summarizer, "LLM_MAX_TRANSCRIPT_CHARS", 60):
+            with self.assertRaises(ValueError) as ctx:
+                summarizer.summarize(self.VIDEO_ID, "takeaways")
+            self.assertIn("Summarize section", str(ctx.exception))
+            summarizer.summarize(self.VIDEO_ID, "section", start=0, end=15)  # a short section still works
+        self.assertEqual(len(calls), 1)
 
     def test_missing_transcript(self):
         with self.assertRaises(summarizer.TranscriptNotFoundError):
@@ -477,11 +475,11 @@ class TestAnswerQuestion(unittest.TestCase):
 
 
 class TestLLMProvider(unittest.TestCase):
-    """Provider choice: Claude only when its key is set, otherwise free Gemini."""
+    """Provider choice: Gemini when its key is set, otherwise local Ollama."""
 
     def env(self, **values):
         clean = {k: v for k, v in os.environ.items()
-                 if k not in ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "GEMINI_API_KEY", "GOOGLE_API_KEY")}
+                 if k not in ("GEMINI_API_KEY", "GOOGLE_API_KEY")}
         clean.update(values)
         return mock.patch.dict(os.environ, clean, clear=True)
 
@@ -493,10 +491,8 @@ class TestLLMProvider(unittest.TestCase):
     def tearDown(self):
         self.llm._clients.clear()
 
-    def test_auto_prefers_claude_then_gemini(self):
+    def test_auto_uses_gemini_key_else_ollama(self):
         with mock.patch.object(self.llm, "LLM_PROVIDER", "auto"):
-            with self.env(ANTHROPIC_API_KEY="a", GEMINI_API_KEY="g"):
-                self.assertEqual(self.llm.active_provider(), "anthropic")
             with self.env(GEMINI_API_KEY="g"):
                 self.assertEqual(self.llm.active_provider(), "gemini")
                 self.assertEqual(self.llm.active_model(), self.llm.GEMINI_MODEL)
@@ -547,8 +543,9 @@ class TestLLMProvider(unittest.TestCase):
             server.shutdown()
 
     def test_forced_provider(self):
-        with mock.patch.object(self.llm, "LLM_PROVIDER", "gemini"), self.env(ANTHROPIC_API_KEY="a"):
-            self.assertEqual(self.llm.active_provider(), "gemini")
+        with mock.patch.object(self.llm, "LLM_PROVIDER", "ollama"), self.env(GEMINI_API_KEY="g"):
+            self.assertEqual(self.llm.active_provider(), "ollama")
+            self.assertEqual(self.llm.active_model(), self.llm.OLLAMA_MODEL)
 
     def test_gemini_schema_drops_additional_properties(self):
         schema = summarizer._SUMMARY_SCHEMA

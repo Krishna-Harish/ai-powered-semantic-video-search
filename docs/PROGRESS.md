@@ -74,10 +74,11 @@ on your own machine with real videos/models.
 
 ## Milestone 13 — LLM Summaries and Grounded Q&A
 - [x] `POST /summarize` (summary / takeaways / section) and `POST /ask`
-- [x] Prompting, timestamp snapping, citations, caching and long-transcript
-      splitting tested with a faked Claude response
-- [x] Provider choice: Gemini (free) when no Anthropic key is set; Gemini
-      request reached Google's API in the sandbox (rejected only for the fake key)
+- [x] Prompting, timestamp snapping, citations and caching tested with a
+      faked LLM response
+- [x] Provider choice: Gemini (free) when GEMINI_API_KEY is set, otherwise
+      local Ollama; Gemini request reached Google's API in the sandbox
+      (rejected only for the fake key)
 - [ ] Real summary with a valid key — **run on your machine** with `GEMINI_API_KEY` set
 
 ## Milestone 14 — AI Quiz Generator

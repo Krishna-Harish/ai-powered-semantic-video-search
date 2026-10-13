@@ -2,7 +2,7 @@
 summarizer.py
 
 LLM-based summaries and grounded Q&A over the Whisper transcripts, using
-Claude or (free tier) Gemini -- see llm.py.
+Gemini (free tier) or a local Ollama model -- see llm.py.
 
     summarize(video_id, "summary")              -- whole-video summary
     summarize(video_id, "takeaways")            -- key takeaways
@@ -16,8 +16,7 @@ transcript segment, and Q&A citations are returned as references to the
 retrieved passages (never free-form timestamps), so every timestamp the
 frontend shows is one that actually exists in the video.
 
-Requires GEMINI_API_KEY (free) or ANTHROPIC_API_KEY in the environment
-(see config.py LLM_* settings).
+Needs GEMINI_API_KEY (free) or a running Ollama (see config.py LLM_* settings).
 """
 
 import os
@@ -30,7 +29,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(
 from backend.config import (
     TRANSCRIPTS_DIR,
     METADATA_DIR,
-    LLM_TRANSCRIPT_WINDOW_CHARS,
+    LLM_MAX_TRANSCRIPT_CHARS,
     LLM_QA_TOP_K,
     MIN_SIMILARITY_SCORE,
 )
@@ -97,21 +96,6 @@ def format_transcript(segments: list) -> str:
     return "\n".join(f"[{format_timestamp(s['start'])}] {s['text'].strip()}" for s in segments)
 
 
-def split_into_windows(segments: list, max_chars: int) -> list:
-    """Splits segments into consecutive groups whose formatted text fits max_chars."""
-    windows, current, size = [], [], 0
-    for seg in segments:
-        line_len = len(seg["text"]) + 12
-        if current and size + line_len > max_chars:
-            windows.append(current)
-            current, size = [], 0
-        current.append(seg)
-        size += line_len
-    if current:
-        windows.append(current)
-    return windows
-
-
 def snap_to_segment(timestamp: float, segments: list) -> float:
     """Returns the start of the segment containing (or nearest to) `timestamp`."""
     best = None
@@ -125,7 +109,7 @@ def snap_to_segment(timestamp: float, segments: list) -> float:
 
 
 # ---------------------------------------------------------------------------
-# LLM call (Claude or Gemini, see llm.py)
+# LLM call (Gemini or Ollama, see llm.py)
 # ---------------------------------------------------------------------------
 
 def _call_llm(system: str, prompt: str, schema: dict) -> dict:
@@ -189,33 +173,14 @@ def _cache_path(video_id: str, mode: str) -> str:
 
 
 def _summarize_segments(segments: list, mode: str, title: str = None) -> dict:
-    header = f"Video title: {title}\n\n" if title else ""
-    windows = split_into_windows(segments, LLM_TRANSCRIPT_WINDOW_CHARS)
-
-    if len(windows) == 1:
-        prompt = f"{header}{_MODE_INSTRUCTIONS[mode]}\n\n<transcript>\n{format_transcript(segments)}\n</transcript>"
-        return _call_llm(_SUMMARY_SYSTEM, prompt, _SUMMARY_SCHEMA)
-
-    # Transcript too long for one request: summarize each window as a
-    # section, then combine the partial summaries (map-reduce).
-    partials = []
-    for window in windows:
-        prompt = (
-            f"{header}{_MODE_INSTRUCTIONS['section']}\n\n"
-            f"<transcript>\n{format_transcript(window)}\n</transcript>"
+    transcript = format_transcript(segments)
+    if len(transcript) > LLM_MAX_TRANSCRIPT_CHARS:
+        raise ValueError(
+            "This transcript is too long to summarize in one go. "
+            "Use 'Summarize section' for a part of the video instead."
         )
-        partials.append(_call_llm(_SUMMARY_SYSTEM, prompt, _SUMMARY_SCHEMA))
-
-    notes = []
-    for i, part in enumerate(partials, 1):
-        notes.append(f"Part {i} summary: {part['summary']}")
-        notes.extend(f"[{p['timestamp']}] {p['text']}" for p in part["points"])
-    prompt = (
-        f"{header}The transcript was too long to read at once, so it was summarized in "
-        f"{len(partials)} consecutive parts. Combine these part summaries into one result for the "
-        f"whole video. {_MODE_INSTRUCTIONS[mode]} Only use timestamps that appear below.\n\n"
-        "<part_summaries>\n" + "\n".join(notes) + "\n</part_summaries>"
-    )
+    header = f"Video title: {title}\n\n" if title else ""
+    prompt = f"{header}{_MODE_INSTRUCTIONS[mode]}\n\n<transcript>\n{transcript}\n</transcript>"
     return _call_llm(_SUMMARY_SYSTEM, prompt, _SUMMARY_SCHEMA)
 
 

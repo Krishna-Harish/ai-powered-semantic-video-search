@@ -84,7 +84,7 @@ not implemented here.
 | Vector similarity search | FAISS |
 | Backend API | FastAPI |
 | YouTube download | yt-dlp |
-| Summaries / grounded Q&A | Gemini API, free tier (`google-genai`), or Claude API (`anthropic`) |
+| Summaries / grounded Q&A / quizzes | Gemini API, free tier (`google-genai`), or a local Ollama model |
 | Frontend | HTML / CSS / vanilla JS |
 
 ## AI Models Used, and Why
@@ -214,7 +214,7 @@ The `/video/{video_id}` endpoint answers HTTP Range requests, which lets the
 browser seek straight to the timestamp without downloading the whole file
 first (this is why `fastapi` is pinned to 0.115.6 or later).
 
-## AI Summaries, Questions and Quizzes (Gemini, Ollama or Claude)
+## AI Summaries, Questions and Quizzes (Gemini or Ollama)
 
 Summaries, Ask AI and the quiz generator need an LLM. Two free options:
 
@@ -235,10 +235,9 @@ automatically. Pick another model with `OLLAMA_MODEL` (e.g. `qwen2.5:7b` or
    export GEMINI_API_KEY=your-key      # Windows (cmd): set GEMINI_API_KEY=your-key
    ```
 
-With `LLM_PROVIDER=auto` (default) the order is: Claude if
-`ANTHROPIC_API_KEY` is set (paid, optional), else Gemini if `GEMINI_API_KEY`
-is set, else local Ollama. To force one, set `LLM_PROVIDER=ollama`,
-`gemini` or `anthropic`. The Gemini model defaults
+With `LLM_PROVIDER=auto` (default), Gemini is used if `GEMINI_API_KEY` is
+set, otherwise local Ollama. To force one, set `LLM_PROVIDER=gemini` or
+`LLM_PROVIDER=ollama`. The Gemini model defaults
 to `gemini-flash-latest` (free tier); change it with `GEMINI_MODEL`.
 
 The free tier limits requests per minute and per day. If you hit the limit
@@ -263,9 +262,10 @@ How the answers stay grounded:
 - If the passages don't cover the question, the answer says so.
 
 Whole-video summaries/takeaways are cached in `data/metadata/` (pass
-`"force": true` to `/summarize` to regenerate). Very long transcripts are
-summarized in parts and then combined. Provider and models are set in
-`backend/config.py` (`LLM_PROVIDER`, `GEMINI_MODEL`, `LLM_MODEL`).
+`"force": true` to `/summarize` to regenerate). Transcripts longer than
+about an hour of speech can't be summarized in one go; use **Summarize
+section** for those. Provider and models are set in `backend/config.py`
+(`LLM_PROVIDER`, `GEMINI_MODEL`, `OLLAMA_MODEL`).
 
 ## Quiz Generator
 
