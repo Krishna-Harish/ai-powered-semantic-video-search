@@ -116,7 +116,10 @@ def _index_video(video_path, video_id, progress, force):
     text_ok = False
     try:
         report("transcribing", "Transcribing audio with Whisper...")
-        transcribe_audio(summary["audio_path"], video_id, force=force)
+        transcribe_audio(
+            summary["audio_path"], video_id, force=force,
+            progress=lambda message: report("transcribing", message),
+        )
         report("chunking", "Chunking transcript...")
         chunk_transcript(video_id)
         report("embedding_text", "Generating text embeddings...")

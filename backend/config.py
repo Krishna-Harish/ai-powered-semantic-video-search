@@ -43,7 +43,17 @@ SUPPORTED_VIDEO_EXTENSIONS = [".mp4", ".mkv", ".mov", ".avi", ".webm"]
 
 # Small model chosen deliberately: good accuracy/speed trade-off on a CPU
 # laptop. Options (smallest->largest): tiny, base, small, medium, large-v3
-WHISPER_MODEL_SIZE = "small"
+# For faster (less accurate) transcription set the WHISPER_MODEL environment
+# variable, e.g. WHISPER_MODEL=base (~2-3x faster than small).
+WHISPER_MODEL_SIZE = os.environ.get("WHISPER_MODEL", "small")
+
+# 1 = greedy decoding: about 2x faster than the default beam search (5) on
+# CPU, with only a small accuracy cost.
+WHISPER_BEAM_SIZE = 1
+
+# CPU threads for Whisper. 0 lets the library pick (often only 4 threads);
+# we use every core the machine has.
+WHISPER_CPU_THREADS = os.cpu_count() or 0
 
 # "transcribe" keeps original spoken language.
 # "translate" converts any spoken language directly to English text.

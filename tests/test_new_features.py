@@ -168,6 +168,39 @@ class TestWavLoader(unittest.TestCase):
             load_wav_16k_mono(self.make_wav("r.wav", rate=44100))
 
 
+class TestTranscriptionProgress(unittest.TestCase):
+    VIDEO_ID = "unittest_progress_video"
+
+    def tearDown(self):
+        path = os.path.join(TRANSCRIPTS_DIR, f"{self.VIDEO_ID}.json")
+        if os.path.isfile(path):
+            os.remove(path)
+
+    def test_reports_percentage_and_uses_fast_settings(self):
+        import tempfile
+        from backend.services import transcriber
+        wav = os.path.join(tempfile.mkdtemp(), "a.wav")
+        subprocess.run(["ffmpeg", "-y", "-v", "error", "-f", "lavfi", "-i", "sine=duration=10",
+                        "-ar", "16000", "-ac", "1", "-c:a", "pcm_s16le", wav], check=True)
+
+        seen = {}
+
+        def fake_transcribe(audio, **kwargs):
+            seen.update(kwargs, samples=len(audio))
+            segs = [mock.Mock(start=0.0, end=5.0, text=" hello "), mock.Mock(start=5.0, end=10.0, text="world")]
+            return iter(segs), mock.Mock(language="en")
+
+        messages = []
+        with mock.patch.object(transcriber, "_get_model", return_value=mock.Mock(transcribe=fake_transcribe)):
+            transcriber.transcribe_audio(wav, self.VIDEO_ID, force=True, progress=messages.append)
+
+        self.assertEqual(seen["samples"], 160000)  # array passed, not a file path
+        self.assertEqual(seen["beam_size"], transcriber.WHISPER_BEAM_SIZE)
+        self.assertIn("50% (0:05 of 0:10)", messages[-2])
+        self.assertIn("100% (0:10 of 0:10)", messages[-1])
+        shutil.rmtree(os.path.dirname(wav))
+
+
 class TestIndexStatus(unittest.TestCase):
     """A failed indexing run is remembered on disk and reported per video."""
     VIDEO_ID = "unittest_status_video"

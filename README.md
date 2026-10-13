@@ -192,6 +192,12 @@ From the command line instead:
 python scripts/ingest_youtube.py https://www.youtube.com/watch?v=VIDEO_ID
 ```
 
+Transcription is the slow step: on a laptop CPU the default Whisper `small`
+model takes very roughly 0.5–1.5x the video's length (the first run also
+downloads the model). The job shows a live percentage. For faster, less
+accurate transcripts, set `WHISPER_MODEL=base` before starting the backend
+(PowerShell: `$env:WHISPER_MODEL = "base"`).
+
 Limits are set in `backend/config.py` (`YOUTUBE_MAX_HEIGHT`,
 `YOUTUBE_MAX_DURATION_SECONDS`, default 2 hours). Live streams and playlists
 are not accepted; only download videos you have the right to use.

@@ -178,10 +178,16 @@ function updateIndexBanner() {
   } else {
     indexBannerText.textContent = "This video isn't indexed for visual search.";
   }
-  indexBannerReason.textContent = v.index_problem ? `Last attempt: ${v.index_problem}` : "";
-  const busy = Object.values(jobs).some(
+  const activeJob = Object.values(jobs).find(
     (j) => j.video_id === v.video_id && (j.status === "queued" || j.status === "running")
   );
+  const busy = Boolean(activeJob);
+  if (busy) {
+    indexBannerText.textContent = "Indexing this video now...";
+    indexBannerReason.textContent = activeJob.message;
+  } else {
+    indexBannerReason.textContent = v.index_problem ? `Last attempt: ${v.index_problem}` : "";
+  }
   reindexBtn.disabled = busy;
   reindexBtn.textContent = busy ? "Indexing..." : "Index now";
   indexBanner.hidden = false;

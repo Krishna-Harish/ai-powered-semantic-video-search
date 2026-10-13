@@ -27,6 +27,8 @@ from backend.config import (
     WHISPER_TASK,
     WHISPER_DEVICE,
     WHISPER_COMPUTE_TYPE,
+    WHISPER_BEAM_SIZE,
+    WHISPER_CPU_THREADS,
 )
 
 _model = None  # lazy-loaded singleton, so the (large) model loads only once per process
@@ -79,6 +81,7 @@ def _get_model():
                 WHISPER_MODEL_SIZE,
                 device=WHISPER_DEVICE,
                 compute_type=WHISPER_COMPUTE_TYPE,
+                cpu_threads=WHISPER_CPU_THREADS,
             )
         except Exception as e:
             raise TranscriptionError(
@@ -88,7 +91,11 @@ def _get_model():
     return _model
 
 
-def transcribe_audio(audio_path: str, video_id: str, force: bool = False) -> str:
+def _clock(seconds: float) -> str:
+    return f"{int(seconds // 60)}:{int(seconds % 60):02d}"
+
+
+def transcribe_audio(audio_path: str, video_id: str, force: bool = False, progress=None) -> str:
     """
     Transcribes an audio file into a timestamped transcript JSON.
     Idempotent: skips re-transcription if the output already exists
@@ -104,6 +111,9 @@ def transcribe_audio(audio_path: str, video_id: str, force: bool = False) -> str
         ]
     }
 
+    `progress(message)` is called as segments are decoded, e.g.
+    "Transcribing with Whisper... 45% (4:31 of 10:02)".
+
     Returns the path to the transcript JSON.
     """
     if not os.path.isfile(audio_path):
@@ -117,18 +127,32 @@ def transcribe_audio(audio_path: str, video_id: str, force: bool = False) -> str
         return output_path
 
     audio = load_wav_16k_mono(audio_path)
+    duration = len(audio) / 16000.0
+
+    if progress is not None:
+        progress(f"Loading Whisper '{WHISPER_MODEL_SIZE}' model (downloads on first use)...")
     model = _get_model()
+    if progress is not None:
+        progress("Transcribing with Whisper... 0%")
 
     try:
         segments_iter, info = model.transcribe(
             audio,
             task=WHISPER_TASK,
+            beam_size=WHISPER_BEAM_SIZE,
             vad_filter=True,  # skip silent stretches, avoids hallucinated text
         )
-        segments = [
-            {"start": float(s.start), "end": float(s.end), "text": s.text.strip()}
-            for s in segments_iter
-        ]
+        # segments_iter is lazy: decoding happens as we iterate, so this is
+        # where the time goes and where progress can be reported.
+        segments = []
+        for s in segments_iter:
+            segments.append({"start": float(s.start), "end": float(s.end), "text": s.text.strip()})
+            if progress is not None and duration > 0:
+                done = min(float(s.end), duration)
+                progress(
+                    f"Transcribing with Whisper... {100 * done / duration:.0f}% "
+                    f"({_clock(done)} of {_clock(duration)})"
+                )
     except Exception as e:
         raise TranscriptionError(f"Whisper failed to transcribe '{audio_path}': {e}")
 
