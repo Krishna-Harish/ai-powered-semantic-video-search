@@ -8,6 +8,7 @@ const API_BASE = window.location.pathname.startsWith("/app")
 
 const videoSelect = document.getElementById("videoSelect");
 const videoPlayer = document.getElementById("videoPlayer");
+const emptyVideo = document.getElementById("emptyVideo");
 const nowPlaying = document.getElementById("nowPlaying");
 const copyLinkBtn = document.getElementById("copyLinkBtn");
 const modeButtons = document.querySelectorAll(".mode-btn");
@@ -133,14 +134,16 @@ async function loadVideos(selectVideoId) {
       videoSelect.appendChild(opt);
     });
 
-    if (data.videos.length === 0) {
-      statusMsg.textContent = "No videos yet. Paste a YouTube URL above, or run scripts/process_videos.py.";
-      return;
-    }
+    const hasVideos = data.videos.length > 0;
+    videoPlayer.hidden = !hasVideos;
+    emptyVideo.hidden = hasVideos;
+    copyLinkBtn.hidden = !hasVideos;
+    if (!hasVideos) return;
     const target = videosById[previous] ? previous : data.videos[0].video_id;
     if (target !== videoSelect.dataset.active) setActiveVideo(target);
     videoSelect.value = target;
   } catch (err) {
+    emptyVideo.textContent = `Could not reach the backend at ${API_BASE}. Is it running?`;
     statusMsg.textContent = `Could not reach the backend at ${API_BASE}. Is it running? (${err.message})`;
   }
 }

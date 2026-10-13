@@ -7,6 +7,7 @@
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
+<div class="container">
 
   <header>
     <h1>AI Video Search</h1>
@@ -15,7 +16,7 @@
 
   <section class="ingest-panel">
     <form id="ingestForm" class="ingest-form">
-      <input type="url" id="youtubeUrlInput" placeholder="Paste a YouTube URL to add it, e.g. https://www.youtube.com/watch?v=..." required>
+      <input type="url" id="youtubeUrlInput" placeholder="Paste a YouTube link, e.g. https://www.youtube.com/watch?v=..." required>
       <button type="submit" id="ingestBtn">Add video</button>
     </form>
     <p class="hint">The video is downloaded, transcribed and indexed automatically. This can take a few minutes.</p>
@@ -28,7 +29,8 @@
         <label for="videoSelect">Video:</label>
         <select id="videoSelect"></select>
       </div>
-      <video id="videoPlayer" controls preload="metadata"></video>
+      <video id="videoPlayer" controls preload="metadata" hidden></video>
+      <div id="emptyVideo" class="empty-video">No videos yet. Paste a YouTube link above to add one.</div>
       <div class="now-playing-row">
         <span id="nowPlaying" class="now-playing"></span>
         <button id="copyLinkBtn" class="link-btn" type="button" title="Copy a link to this moment">Copy link to this moment</button>
@@ -73,6 +75,7 @@
     </section>
   </main>
 
+</div>
   <script src="app.js"></script>
 </body>
 </html>
