@@ -114,6 +114,38 @@ DEFAULT_TOP_K = 5
 MIN_SIMILARITY_SCORE = 0.15  # results below this score are filtered out
 
 # ---------------------------------------------------------------------------
+# Multimodal search (score fusion of transcript + visual evidence)
+# ---------------------------------------------------------------------------
+
+# Relative importance of what is SAID vs what is SHOWN. Normalized to sum to 1;
+# can be overridden per request. Speech carries most of the content in lectures.
+FUSION_TEXT_WEIGHT = 0.6
+FUSION_VISUAL_WEIGHT = 0.4
+
+# "auto": calibrated score fusion, falling back to rank fusion (RRF) when a
+# modality's raw scores don't look like cosine similarities.
+# "calibrated" / "rrf": force one method.
+FUSION_METHOD = "auto"
+
+# Raw cosine similarities of the two models live on different scales, so each
+# is mapped to 0..1 between a "floor" (typical score of an unrelated pair -> 0)
+# and a "ceiling" (a clearly strong match -> 1). Approximate values for the
+# default models; tune them on your own videos if needed.
+TEXT_SCORE_FLOOR = 0.15     # all-MiniLM-L6-v2, query vs transcript chunk
+TEXT_SCORE_CEILING = 0.65
+VISUAL_SCORE_FLOOR = 0.18   # CLIP ViT-B-32, query text vs frame
+VISUAL_SCORE_CEILING = 0.30
+
+# How many transcript chunks / frames each index contributes as candidates
+# before every candidate moment is re-scored on both modalities.
+FUSION_TEXT_CANDIDATES = 50
+FUSION_VISUAL_CANDIDATES = 100
+
+FUSION_RRF_K = 60              # standard reciprocal-rank-fusion constant
+FUSION_MIN_SCORE = 0.05        # calibrated results below this fused score are dropped
+FUSION_EVIDENCE_THRESHOLD = 0.2  # normalized score at which a modality counts as "matched"
+
+# ---------------------------------------------------------------------------
 # YouTube ingestion settings
 # ---------------------------------------------------------------------------
 

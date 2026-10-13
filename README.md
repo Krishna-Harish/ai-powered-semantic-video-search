@@ -69,9 +69,9 @@ to match.
                     Video player seeks to timestamp
 ```
 
-Text and visual retrieval are kept as **separate** indexes/pipelines in this
-version. Combining their scores (multimodal fusion) is a future extension,
-not implemented here.
+Text and visual retrieval keep **separate** indexes. The **Combined** search
+mode fuses their scores at query time (see "How Combined Search Works"); the
+Text and Visual modes still search each index on its own.
 
 ## Technologies
 
@@ -311,6 +311,7 @@ API endpoints:
 | `GET /ingest/jobs`, `GET /ingest/jobs/{job_id}` | Ingestion progress |
 | `POST /summarize` `{"video_id", "mode": "summary"\|"takeaways"\|"section", "start", "end"}` | LLM summary |
 | `POST /ask` `{"question", "video_id"?}` | Answer grounded in transcript passages |
+| `POST /search/multimodal` `{"query", "top_k"?, "text_weight"?, "visual_weight"?, "method"?}` | Combined search: transcript + visual evidence fused into one ranking |
 | `POST /quiz/generate` `{"video_id", "num_questions": 5\|10\|15, "difficulty", "question_type"}` | Generate a quiz (no answers returned) |
 | `GET /quiz/{quiz_id}` | Fetch a generated quiz (no answers) |
 | `POST /quiz/{quiz_id}/submit` `{"answers": {"q1": 0, ...}}` | Score on the server; returns answers, explanations, timestamps, topic breakdown |
@@ -331,6 +332,47 @@ API endpoints:
 3. FAISS finds the frames whose vectors are closest to your query vector,
    returned with video ID, timestamp, and a frame preview.
 
+## How Combined Search Works (multimodal score fusion)
+
+`POST /search/multimodal`, the **Combined** tab (default). Code:
+`backend/services/fusion.py`, settings: `FUSION_*` / `*_SCORE_*` in
+`backend/config.py`.
+
+1. **Candidates.** The query is embedded once by each model (MiniLM and
+   CLIP). The existing FAISS indexes return the top 50 transcript chunks
+   and the top 100 frames.
+2. **Moments.** A moment is a transcript chunk (~20 s) with the frames
+   sampled during it attached. Frames with no transcript around them (e.g.
+   a silent video) become visual-only moments; adjacent ones are merged,
+   up to chunk length. Duplicates are merged.
+3. **Re-scoring.** Every moment is scored on **both** modalities from the
+   stored vectors (two matrix products). So a moment found by the
+   transcript also gets its visual score and vice versa: evidence can
+   reinforce without both lists having to contain it.
+4. **Normalization.** Raw cosine scores are not comparable across models
+   (a strong CLIP text-to-image match is ~0.3, a strong MiniLM match ~0.6+),
+   so they are never added directly. Each is mapped linearly to 0..1
+   between a per-model floor (unrelated, 0) and ceiling (strong match, 1):
+   text 0.15–0.65, visual 0.18–0.30.
+5. **Fusion: weighted soft-OR.** `fused = 1 - (1 - t)^w_t · (1 - v)^w_v`
+   with default weights 0.6 (speech) / 0.4 (visual). One strong modality
+   is enough to rank high; agreement between both ranks higher still; a
+   modality with no evidence neither helps nor hurts. Weights can be passed
+   per request (`text_weight`, `visual_weight`).
+6. **Fallback: rank fusion.** If a modality's scores are not cosine
+   similarities (outside −1..1, e.g. an index built differently), the
+   calibrated mapping is meaningless, so reciprocal rank fusion (RRF, k=60)
+   is used instead. `"method": "rrf"` forces it.
+7. **Results** are sorted by fused score and keep the raw and normalized
+   per-modality scores (`text_score`, `visual_score`, `text_norm`,
+   `visual_norm`) for debugging. `matched_by` lists the modalities that
+   contributed. If one index is missing, the other is used alone and the
+   response says so in `warnings`.
+
+The floor/ceiling values are approximate for the default models; check
+them on your own videos (the raw scores are in every result) and adjust in
+`config.py` if needed.
+
 ## Example Queries
 
 - Text search: `"Where is gradient descent explained?"`
@@ -343,7 +385,8 @@ API endpoints:
 - Frame sampling (default every 5s) can miss visual content shown only very
   briefly, or in the last few seconds of a video (an FFmpeg `fps` filter
   edge case near end-of-stream).
-- Text and visual search scores are not combined (no multimodal fusion yet).
+- Combined search uses fixed per-model score calibration (floor/ceiling);
+  these were set from typical score ranges, not tuned on this corpus.
 - Whisper's `translate` mode standardizes all transcripts to English, which
   improves cross-video consistency but loses exact original-language
   wording.
@@ -355,7 +398,6 @@ API endpoints:
 
 ## Future Improvements
 
-- Multimodal score fusion (combine text + visual relevance).
 - Reranking, query expansion, temporal context windows.
 - Formal evaluation: Precision@K, Recall@K, timestamp accuracy, latency.
 - Larger/better embedding models if hardware allows.

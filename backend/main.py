@@ -5,6 +5,7 @@ FastAPI backend exposing:
     GET  /videos          -- list processed videos
     POST /search/text     -- text/semantic search
     POST /search/visual    -- visual search
+    POST /search/multimodal -- transcript + visual evidence fused into one ranking
     GET  /video/{video_id} -- stream a video file (for the <video> player)
     GET  /frame/{video_id}/{filename} -- serve a sampled frame image (for previews)
     POST /ingest/youtube   -- download + index a YouTube video (background job)
@@ -39,6 +40,8 @@ from backend.models.schemas import (
     VisualSearchRequest,
     TextSearchResponse,
     VisualSearchResponse,
+    MultimodalSearchRequest,
+    MultimodalSearchResponse,
     VideoListResponse,
     VideoInfo,
     YouTubeIngestRequest,
@@ -54,6 +57,7 @@ from backend.models.schemas import (
     QuizResultResponse,
 )
 from backend.services.search import text_search, visual_search
+from backend.services.fusion import multimodal_search, FusionUnavailableError
 from backend.services.video_processor import get_video_duration, VideoProcessingError
 from backend.services.youtube_ingest import job_manager, load_video_info
 from backend.services.indexing_pipeline import get_index_state
@@ -143,6 +147,20 @@ def _check_safe_name(value: str, what: str):
     """Rejects ids/filenames that could escape their data directory."""
     if not _SAFE_ID_RE.match(value) or value in (".", ".."):
         raise HTTPException(status_code=400, detail=f"Invalid {what}.")
+
+
+@app.post("/search/multimodal", response_model=MultimodalSearchResponse)
+def search_multimodal_endpoint(request: MultimodalSearchRequest):
+    """Ranks moments by what is said AND what is shown (see services/fusion.py)."""
+    try:
+        return multimodal_search(request.query, top_k=request.top_k, text_weight=request.text_weight,
+                                 visual_weight=request.visual_weight, method=request.method)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except FusionUnavailableError as e:
+        raise HTTPException(status_code=409, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Multimodal search failed: {e}")
 
 
 @app.get("/video/{video_id}")

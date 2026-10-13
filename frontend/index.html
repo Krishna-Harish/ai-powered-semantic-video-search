@@ -63,13 +63,14 @@
 
     <section class="search-panel">
       <div class="mode-toggle">
-        <button id="textModeBtn" class="mode-btn active" data-mode="text">Text Search</button>
+        <button id="multiModeBtn" class="mode-btn active" data-mode="multi" title="Search what is said and what is shown together">Combined</button>
+        <button id="textModeBtn" class="mode-btn" data-mode="text">Text Search</button>
         <button id="visualModeBtn" class="mode-btn" data-mode="visual">Visual Search</button>
         <button id="askModeBtn" class="mode-btn" data-mode="ask">Ask AI</button>
       </div>
 
       <div class="search-box">
-        <input type="text" id="queryInput" placeholder="e.g. Where is gradient descent explained?">
+        <input type="text" id="queryInput" placeholder="e.g. the presenter showing a diagram while explaining ports">
         <button id="searchBtn">Search</button>
       </div>
       <label id="askScopeRow" class="scope-row" hidden>

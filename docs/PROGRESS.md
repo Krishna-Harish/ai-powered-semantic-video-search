@@ -91,6 +91,15 @@ on your own machine with real videos/models.
       headless Chromium against a fake Ollama server
 - [ ] Question quality with a real model — **run on your machine**
 
+## Milestone 15 — Multimodal Score Fusion
+- [x] `POST /search/multimodal` + "Combined" tab: candidates from both
+      existing FAISS indexes, moments re-scored on both modalities,
+      per-model calibration, weighted soft-OR fusion, RRF fallback
+- [x] `tests/test_fusion.py` (23 tests: text-only, visual-only, combined,
+      normalization, ranking, missing modality, fallback, real FAISS files)
+- [x] Full UI flow verified in headless Chromium with stand-in query encoders
+- [ ] Check/tune score floors/ceilings with the real models on your videos
+
 ## Approximate Completion
 
 **Code: ~100% of Core + Visual Search MVP implemented.**

@@ -38,12 +38,13 @@ const quizStatus = document.getElementById("quizStatus");
 const quizArea = document.getElementById("quizArea");
 
 const PLACEHOLDERS = {
+  multi: "e.g. the presenter showing a diagram while explaining ports",
   text: "e.g. Where is gradient descent explained?",
   visual: "e.g. Where is a neural network diagram shown?",
   ask: "e.g. What is the difference between CNNs and RNNs?",
 };
 
-let currentMode = "text"; // "text", "visual" or "ask"
+let currentMode = "multi"; // "multi" (combined), "text", "visual" or "ask"
 let videosById = {};
 
 // ---------------------------------------------------------------------------
@@ -324,6 +325,14 @@ async function runSearch() {
     }
 
     statusMsg.textContent = "Searching...";
+    if (mode === "multi") {
+      const data = await apiPost("/search/multimodal", { query, top_k: 8 });
+      renderMultimodalResults(data);
+      const note = data.modalities.length === 1
+        ? ` (${data.modalities[0] === "text" ? "speech" : "visual"} evidence only: the other index isn't available)` : "";
+      statusMsg.textContent = `${data.results.length} moment(s) for "${data.query}"${note} — click one to play it`;
+      return;
+    }
     const data = await apiPost(mode === "text" ? "/search/text" : "/search/visual", { query, top_k: 5 });
     renderResults(data.results, mode);
     statusMsg.textContent = `${data.results.length} result(s) for "${data.query}" — click one to play it`;
@@ -373,6 +382,50 @@ function renderResults(results, mode) {
       <span class="jump-btn">&#9654; Play from ${formatTimestamp(seconds)}</span>
       <span class="result-range">${range}</span>
     `;
+    resultsList.appendChild(card);
+  });
+}
+
+// Combined results: each moment shows the evidence that matched -- what was
+// said (transcript excerpt) and/or what was shown (best frame).
+function renderMultimodalResults(data) {
+  resultsList.innerHTML = "";
+  if (!data.results.length) {
+    resultsList.innerHTML = `<p class="status">No relevant moments found.</p>`;
+    return;
+  }
+
+  data.results.forEach((r, i) => {
+    const card = momentLink(r.video_id, r.timestamp, "", "result-card");
+    card.title = `Fused score ${r.score.toFixed(2)} · speech ${r.text_score ?? "–"} · visual ${r.visual_score ?? "–"} (raw cosine)`;
+
+    const header = el("div", "result-header");
+    header.appendChild(el("span", null, `${i + 1}. ${videoLabel(r.video_id)}`));
+    header.appendChild(el("span", "result-score", `Relevance ${Math.round(r.score * 100)}%`));
+    card.appendChild(header);
+
+    const badges = el("div", "evidence-badges");
+    [["text", "Speech", r.text_norm], ["visual", "Visual", r.visual_norm]].forEach(([key, label, norm]) => {
+      if (norm == null) return;
+      const matched = r.matched_by.includes(key);
+      badges.appendChild(el("span", `evidence-badge${matched ? " matched" : ""}`,
+        `${matched ? "✓ " : ""}${label} ${Math.round(norm * 100)}%`));
+    });
+    card.appendChild(badges);
+
+    const body = el("div", "evidence-body");
+    if (r.frame_filename) {
+      const img = el("img", "evidence-frame");
+      img.src = `${API_BASE}/frame/${encodeURIComponent(r.video_id)}/${encodeURIComponent(r.frame_filename)}`;
+      img.alt = `frame at ${formatTimestamp(r.frame_timestamp)}`;
+      img.loading = "lazy";
+      body.appendChild(img);
+    }
+    if (r.text) body.appendChild(el("p", "result-text", r.text));
+    card.appendChild(body);
+
+    card.appendChild(el("span", "jump-btn", `▶ Play from ${formatTimestamp(r.timestamp)}`));
+    card.appendChild(el("span", "result-range", `${formatTimestamp(r.start)} – ${formatTimestamp(r.end)}`));
     resultsList.appendChild(card);
   });
 }

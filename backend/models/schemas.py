@@ -45,6 +45,41 @@ class VisualSearchResponse(BaseModel):
     results: List[VisualSearchResult]
 
 
+class MultimodalSearchRequest(BaseModel):
+    query: str
+    top_k: Optional[int] = Field(10, ge=1, le=50)
+    # Relative weight of transcript vs visual evidence (default: config values)
+    text_weight: Optional[float] = Field(None, ge=0, le=1)
+    visual_weight: Optional[float] = Field(None, ge=0, le=1)
+    method: Optional[Literal["auto", "calibrated", "rrf"]] = None
+
+
+class MultimodalSearchResult(BaseModel):
+    video_id: str
+    timestamp: float           # where to start playing
+    start: float
+    end: float
+    score: float               # fused relevance, 0..1
+    text_score: Optional[float] = None    # raw MiniLM cosine (debugging)
+    visual_score: Optional[float] = None  # raw CLIP cosine of the best frame (debugging)
+    text_norm: Optional[float] = None     # calibrated 0..1
+    visual_norm: Optional[float] = None
+    matched_by: List[Literal["text", "visual"]]
+    text: Optional[str] = None            # transcript excerpt, if the moment has one
+    frame_filename: Optional[str] = None  # representative frame, if any
+    frame_timestamp: Optional[float] = None
+
+
+class MultimodalSearchResponse(BaseModel):
+    query: str
+    method: Literal["calibrated", "rrf"]
+    text_weight: float
+    visual_weight: float
+    modalities: List[str]
+    warnings: List[str]
+    results: List[MultimodalSearchResult]
+
+
 class VideoInfo(BaseModel):
     video_id: str
     filename: str
