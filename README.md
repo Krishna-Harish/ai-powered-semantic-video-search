@@ -84,7 +84,7 @@ not implemented here.
 | Vector similarity search | FAISS |
 | Backend API | FastAPI |
 | YouTube download | yt-dlp |
-| Summaries / grounded Q&A | Claude API (`anthropic` SDK) |
+| Summaries / grounded Q&A | Gemini API, free tier (`google-genai`), or Claude API (`anthropic`) |
 | Frontend | HTML / CSS / vanilla JS |
 
 ## AI Models Used, and Why
@@ -203,12 +203,24 @@ The `/video/{video_id}` endpoint answers HTTP Range requests, which lets the
 browser seek straight to the timestamp without downloading the whole file
 first (this is why `fastapi` is pinned to 0.115.6 or later).
 
-## AI Summaries and Questions (Claude API)
+## AI Summaries and Questions (Gemini free tier or Claude)
 
-Requires an Anthropic API key:
-```bash
-export ANTHROPIC_API_KEY=sk-ant-...      # Windows: set ANTHROPIC_API_KEY=...
-```
+Needs one API key. The free option is Google Gemini:
+
+1. Create a free key at https://aistudio.google.com/apikey (no billing needed).
+2. Set it before starting the backend:
+   ```bash
+   export GEMINI_API_KEY=your-key      # Windows (cmd): set GEMINI_API_KEY=your-key
+   ```
+
+If you also have a paid Anthropic key (`ANTHROPIC_API_KEY`), Claude is used
+instead; without it, Gemini is used automatically. To force one, set
+`LLM_PROVIDER=gemini` or `LLM_PROVIDER=anthropic`. The Gemini model defaults
+to `gemini-flash-latest` (free tier); change it with `GEMINI_MODEL`.
+
+The free tier limits requests per minute and per day. If you hit the limit
+the app says so; wait a minute and retry. Whole-video summaries are cached,
+so asking again for the same video doesn't use quota.
 
 Under the player, for the selected video:
 - **Summarize video**: short summary plus the main topics with timestamps.
@@ -229,8 +241,8 @@ How the answers stay grounded:
 
 Whole-video summaries/takeaways are cached in `data/metadata/` (pass
 `"force": true` to `/summarize` to regenerate). Very long transcripts are
-summarized in parts and then combined. Model and effort are set in
-`backend/config.py` (`LLM_MODEL`, `LLM_EFFORT`).
+summarized in parts and then combined. Provider and models are set in
+`backend/config.py` (`LLM_PROVIDER`, `GEMINI_MODEL`, `LLM_MODEL`).
 
 API endpoints:
 

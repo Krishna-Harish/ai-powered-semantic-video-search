@@ -110,13 +110,23 @@ YOUTUBE_MAX_HEIGHT = 720
 YOUTUBE_MAX_DURATION_SECONDS = 2 * 60 * 60
 
 # ---------------------------------------------------------------------------
-# LLM summary / Q&A settings (Claude API)
+# LLM summary / Q&A settings
 # ---------------------------------------------------------------------------
 
-# Requires ANTHROPIC_API_KEY in the environment (or an `ant auth login` profile).
+# Which LLM generates summaries and answers:
+#   "auto"      -- Claude if ANTHROPIC_API_KEY is set, otherwise Gemini if
+#                  GEMINI_API_KEY (or GOOGLE_API_KEY) is set
+#   "gemini"    -- always Gemini (free tier key: https://aistudio.google.com/apikey)
+#   "anthropic" -- always Claude (paid API key)
+LLM_PROVIDER = os.environ.get("LLM_PROVIDER", "auto")
+
+# Gemini model. "gemini-flash-latest" always points at Google's current Flash
+# model, which is available on the free tier.
+GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-flash-latest")
+
+# Claude model and thinking depth (low | medium | high | xhigh | max).
 LLM_MODEL = "claude-opus-5-5"
 
-# Thinking depth / token spend: low | medium | high | xhigh | max
 LLM_EFFORT = "medium"
 
 LLM_MAX_OUTPUT_TOKENS = 16000

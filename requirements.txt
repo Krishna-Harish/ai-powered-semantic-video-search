@@ -25,5 +25,7 @@ numpy==1.26.4
 # YouTube URL ingestion (download step of POST /ingest/youtube)
 yt-dlp>=2024.8.6
 
-# LLM summaries / grounded Q&A (Claude API)
+# LLM summaries / grounded Q&A: Gemini (free tier) and/or Claude (paid).
+# Only the one whose API key you set is used; see backend/config.py LLM_PROVIDER.
+google-genai>=1.30.0
 anthropic>=1.0.0

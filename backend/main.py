@@ -12,6 +12,7 @@ FastAPI backend exposing:
     GET  /ingest/jobs/{job_id} -- poll one ingestion job
     POST /summarize        -- LLM summary / key takeaways / section summary
     POST /ask              -- LLM answer grounded in transcript passages
+                              (Gemini free tier or Claude, see services/llm.py)
     GET  /app/             -- the frontend (same origin as the API)
 
 Run with:  uvicorn backend.main:app --reload

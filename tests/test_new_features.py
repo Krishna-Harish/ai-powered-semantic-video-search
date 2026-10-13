@@ -353,6 +353,86 @@ class TestAnswerQuestion(unittest.TestCase):
         self.assertEqual(result["citations"], [])
 
 
+class TestLLMProvider(unittest.TestCase):
+    """Provider choice: Claude only when its key is set, otherwise free Gemini."""
+
+    def env(self, **values):
+        clean = {k: v for k, v in os.environ.items()
+                 if k not in ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "GEMINI_API_KEY", "GOOGLE_API_KEY")}
+        clean.update(values)
+        return mock.patch.dict(os.environ, clean, clear=True)
+
+    def setUp(self):
+        from backend.services import llm
+        self.llm = llm
+        llm._clients.clear()
+
+    def tearDown(self):
+        self.llm._clients.clear()
+
+    def test_auto_prefers_claude_then_gemini(self):
+        with mock.patch.object(self.llm, "LLM_PROVIDER", "auto"):
+            with self.env(ANTHROPIC_API_KEY="a", GEMINI_API_KEY="g"):
+                self.assertEqual(self.llm.active_provider(), "anthropic")
+            with self.env(GEMINI_API_KEY="g"):
+                self.assertEqual(self.llm.active_provider(), "gemini")
+                self.assertEqual(self.llm.active_model(), self.llm.GEMINI_MODEL)
+            with self.env(GOOGLE_API_KEY="g"):
+                self.assertEqual(self.llm.active_provider(), "gemini")
+            with self.env():
+                self.assertIsNone(self.llm.active_provider())
+                with self.assertRaises(self.llm.LLMUnavailableError):
+                    self.llm.generate_json("s", "p", {})
+
+    def test_forced_provider(self):
+        with mock.patch.object(self.llm, "LLM_PROVIDER", "gemini"), self.env(ANTHROPIC_API_KEY="a"):
+            self.assertEqual(self.llm.active_provider(), "gemini")
+
+    def test_gemini_schema_drops_additional_properties(self):
+        schema = summarizer._SUMMARY_SCHEMA
+        cleaned = self.llm._gemini_schema(schema)
+        self.assertNotIn("additionalProperties", json.dumps(cleaned))
+        self.assertIn("additionalProperties", json.dumps(schema))  # original untouched
+        self.assertEqual(cleaned["required"], ["summary", "points"])
+
+    def test_gemini_call_parses_json(self):
+        try:
+            from google.genai import types, errors
+        except ImportError:
+            self.skipTest("google-genai not installed")
+
+        captured = {}
+
+        def generate_content(model, contents, config):
+            captured.update(model=model, contents=contents, config=config)
+            candidate = mock.Mock(finish_reason=types.FinishReason.STOP)
+            return mock.Mock(candidates=[candidate], text='{"summary": "ok", "points": []}')
+
+        client = mock.Mock()
+        client.models.generate_content.side_effect = generate_content
+        self.llm._clients["gemini"] = client
+
+        with mock.patch.object(self.llm, "LLM_PROVIDER", "auto"), self.env(GEMINI_API_KEY="g"):
+            result = self.llm.generate_json("sys", "prompt", summarizer._SUMMARY_SCHEMA)
+            self.assertEqual(result, {"summary": "ok", "points": []})
+            self.assertEqual(captured["config"].system_instruction, "sys")
+            self.assertEqual(captured["config"].response_mime_type, "application/json")
+
+            # free-tier quota exhausted -> clear "unavailable" error
+            client.models.generate_content.side_effect = errors.ClientError(
+                429, {"error": {"message": "Resource exhausted", "status": "RESOURCE_EXHAUSTED"}})
+            with self.assertRaises(self.llm.LLMUnavailableError) as ctx:
+                self.llm.generate_json("sys", "prompt", {})
+            self.assertIn("quota", str(ctx.exception))
+
+            # safety block / truncated output -> LLMError
+            client.models.generate_content.side_effect = None
+            client.models.generate_content.return_value = mock.Mock(
+                candidates=[mock.Mock(finish_reason=types.FinishReason.MAX_TOKENS)], text="{")
+            with self.assertRaises(self.llm.LLMError):
+                self.llm.generate_json("sys", "prompt", {})
+
+
 @unittest.skipUnless(HAVE_FASTAPI, "fastapi not installed")
 class TestApi(unittest.TestCase):
     VIDEO_ID = "unittest_api_video"

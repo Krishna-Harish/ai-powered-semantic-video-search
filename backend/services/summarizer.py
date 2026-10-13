@@ -2,7 +2,7 @@
 summarizer.py
 
 LLM-based summaries and grounded Q&A over the Whisper transcripts, using
-the Claude API.
+Claude or (free tier) Gemini -- see llm.py.
 
     summarize(video_id, "summary")              -- whole-video summary
     summarize(video_id, "takeaways")            -- key takeaways
@@ -16,7 +16,8 @@ transcript segment, and Q&A citations are returned as references to the
 retrieved passages (never free-form timestamps), so every timestamp the
 frontend shows is one that actually exists in the video.
 
-Requires ANTHROPIC_API_KEY in the environment (see config.py LLM_* settings).
+Requires GEMINI_API_KEY (free) or ANTHROPIC_API_KEY in the environment
+(see config.py LLM_* settings).
 """
 
 import os
@@ -29,29 +30,16 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(
 from backend.config import (
     TRANSCRIPTS_DIR,
     METADATA_DIR,
-    LLM_MODEL,
-    LLM_EFFORT,
-    LLM_MAX_OUTPUT_TOKENS,
     LLM_TRANSCRIPT_WINDOW_CHARS,
     LLM_QA_TOP_K,
     MIN_SIMILARITY_SCORE,
 )
+from backend.services import llm
+from backend.services.llm import LLMError as SummaryError, LLMUnavailableError
 
 SUMMARY_MODES = ("summary", "takeaways", "section")
 
-_client = None  # lazy-loaded singleton
-
-
-class SummaryError(Exception):
-    pass
-
-
 class TranscriptNotFoundError(SummaryError):
-    pass
-
-
-class LLMUnavailableError(SummaryError):
-    """The Claude API could not be reached or is not configured."""
     pass
 
 
@@ -137,68 +125,12 @@ def snap_to_segment(timestamp: float, segments: list) -> float:
 
 
 # ---------------------------------------------------------------------------
-# Claude API call
+# LLM call (Claude or Gemini, see llm.py)
 # ---------------------------------------------------------------------------
 
-def _get_client():
-    global _client
-    if _client is None:
-        try:
-            import anthropic
-        except ImportError:
-            raise LLMUnavailableError("The anthropic package is not installed. Run: pip install anthropic")
-        _client = anthropic.Anthropic()
-    return _client
-
-
 def _call_llm(system: str, prompt: str, schema: dict) -> dict:
-    """Single Claude request that returns JSON validated against `schema`."""
-    import anthropic
-
-    client = _get_client()
-    try:
-        response = client.beta.messages.create(
-            model=LLM_MODEL,
-            max_tokens=LLM_MAX_OUTPUT_TOKENS,
-            system=system,
-            messages=[{"role": "user", "content": prompt}],
-            output_config={
-                "effort": LLM_EFFORT,
-                "format": {"type": "json_schema", "schema": schema},
-            },
-            # If a safety classifier declines, retry server-side on Anthropic's
-            # recommended fallback model instead of returning a refusal.
-            betas=["server-side-fallback-2026-07-01"],
-            fallbacks="default",
-        )
-    except anthropic.AuthenticationError:
-        raise LLMUnavailableError("Claude API authentication failed. Set a valid ANTHROPIC_API_KEY.")
-    except anthropic.PermissionDeniedError as e:
-        raise LLMUnavailableError(f"Claude API permission denied: {e.message}")
-    except anthropic.RateLimitError:
-        raise LLMUnavailableError("Claude API rate limit reached. Try again shortly.")
-    except anthropic.APIStatusError as e:
-        raise SummaryError(f"Claude API error ({e.status_code}): {e.message}")
-    except anthropic.APIConnectionError:
-        raise LLMUnavailableError("Could not connect to the Claude API.")
-    except TypeError as e:
-        # The SDK raises TypeError when no credentials are configured at all.
-        if "authentication" not in str(e):
-            raise
-        raise LLMUnavailableError("Claude API is not configured. Set ANTHROPIC_API_KEY.")
-
-    if response.stop_reason == "refusal":
-        raise SummaryError("The model declined to process this transcript.")
-    if response.stop_reason == "max_tokens":
-        raise SummaryError("The model's response was cut off. Try a shorter section.")
-
-    text = next((b.text for b in response.content if b.type == "text"), None)
-    if text is None:
-        raise SummaryError("The model returned no text.")
-    try:
-        return json.loads(text)
-    except json.JSONDecodeError:
-        raise SummaryError("The model returned invalid JSON.")
+    """Single LLM request that returns JSON validated against `schema`."""
+    return llm.generate_json(system, prompt, schema)
 
 
 # ---------------------------------------------------------------------------
@@ -342,7 +274,7 @@ def summarize(video_id: str, mode: str = "summary", start: float = None, end: fl
         "end": end,
         "summary": raw.get("summary", "").strip(),
         "points": _clean_points(raw.get("points", []), segments),
-        "model": LLM_MODEL,
+        "model": llm.active_model(),
     }
 
     if mode != "section":
@@ -422,7 +354,7 @@ def answer_question(question: str, video_id: str = None, top_k: int = None, pass
             "answerable": False,
             "answer": "No relevant transcript passages were found for this question.",
             "citations": [],
-            "model": LLM_MODEL,
+            "model": llm.active_model(),
         }
 
     raw = _call_llm(_ANSWER_SYSTEM, build_answer_prompt(question, passages), _ANSWER_SCHEMA)
@@ -445,5 +377,5 @@ def answer_question(question: str, video_id: str = None, top_k: int = None, pass
         "answerable": bool(raw.get("answerable")) and bool(citations),
         "answer": raw.get("answer", "").strip(),
         "citations": citations,
-        "model": LLM_MODEL,
+        "model": llm.active_model(),
     }
