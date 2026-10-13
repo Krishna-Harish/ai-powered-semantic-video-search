@@ -6,8 +6,8 @@ Keeping these separate from the API routes keeps main.py focused
 purely on routing/wiring.
 """
 
-from pydantic import BaseModel, Field
-from typing import List, Literal, Optional
+from pydantic import BaseModel, Field, StrictInt
+from typing import Dict, List, Literal, Optional
 
 
 class TextSearchRequest(BaseModel):
@@ -136,6 +136,81 @@ class AskResponse(BaseModel):
     answer: str
     citations: List[Citation]
     model: str
+
+
+# ---------------------------------------------------------------------------
+# Quiz generator
+# ---------------------------------------------------------------------------
+
+class QuizGenerateRequest(BaseModel):
+    video_id: str
+    num_questions: Literal[5, 10, 15] = 5
+    difficulty: Literal["easy", "medium", "hard"] = "medium"
+    question_type: Literal["mcq", "true_false", "mixed"] = "mixed"
+
+
+class QuizQuestionPublic(BaseModel):
+    """A question as shown before submission: no answer, explanation or timestamp."""
+    id: str
+    type: Literal["mcq", "true_false"]
+    question: str
+    options: List[str]
+    topic: str
+
+
+class QuizPublic(BaseModel):
+    quiz_id: str
+    video_id: str
+    difficulty: str
+    question_type: str
+    requested_count: int
+    notice: Optional[str] = None  # e.g. why there are fewer questions than requested
+    model: Optional[str] = None
+    questions: List[QuizQuestionPublic]
+
+
+class QuizSubmitRequest(BaseModel):
+    # question id -> selected option index (None/missing = unanswered)
+    answers: Dict[str, Optional[StrictInt]] = {}
+
+
+class QuizQuestionResult(BaseModel):
+    id: str
+    type: str
+    question: str
+    options: List[str]
+    topic: str
+    selected_index: Optional[int] = None
+    correct_index: int
+    is_correct: bool
+    explanation: str
+    start: float  # where the concept is explained ("Rewatch this section")
+    end: float
+
+
+class QuizRevisionSection(BaseModel):
+    start: float
+    end: float
+
+
+class QuizTopicResult(BaseModel):
+    topic: str
+    correct: int
+    total: int
+    percentage: int
+    needs_revision: bool
+    revise_sections: List[QuizRevisionSection]
+
+
+class QuizResultResponse(BaseModel):
+    quiz_id: str
+    video_id: str
+    score: int
+    total: int
+    percentage: int
+    answered: int
+    results: List[QuizQuestionResult]
+    topics: List[QuizTopicResult]
 
 
 class ErrorResponse(BaseModel):

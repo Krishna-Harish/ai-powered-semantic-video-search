@@ -20,9 +20,10 @@ TRANSCRIPTS_DIR = os.path.join(DATA_DIR, "transcripts")
 EMBEDDINGS_DIR = os.path.join(DATA_DIR, "embeddings")
 INDEXES_DIR = os.path.join(DATA_DIR, "indexes")
 METADATA_DIR = os.path.join(DATA_DIR, "metadata")
+QUIZZES_DIR = os.path.join(DATA_DIR, "quizzes")
 
 for folder in [VIDEOS_DIR, AUDIO_DIR, FRAMES_DIR, TRANSCRIPTS_DIR,
-               EMBEDDINGS_DIR, INDEXES_DIR, METADATA_DIR]:
+               EMBEDDINGS_DIR, INDEXES_DIR, METADATA_DIR, QUIZZES_DIR]:
     os.makedirs(folder, exist_ok=True)
 
 # ---------------------------------------------------------------------------
@@ -128,7 +129,17 @@ YOUTUBE_MAX_DURATION_SECONDS = 2 * 60 * 60
 #                  GEMINI_API_KEY (or GOOGLE_API_KEY) is set
 #   "gemini"    -- always Gemini (free tier key: https://aistudio.google.com/apikey)
 #   "anthropic" -- always Claude (paid API key)
+#   "ollama"    -- a local model through Ollama (free, offline, no key);
+#                  "auto" also falls back to it when no API key is set
 LLM_PROVIDER = os.environ.get("LLM_PROVIDER", "auto")
+
+# Ollama (https://ollama.com): run `ollama pull llama3.2` once, then keep the
+# Ollama app running. Bigger models (e.g. llama3.1:8b, qwen2.5:7b) give better
+# quizzes/summaries but need more RAM.
+OLLAMA_HOST = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
+OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "llama3.2")
+OLLAMA_CONTEXT_TOKENS = 16384   # Ollama's default context is too small for a transcript
+OLLAMA_TIMEOUT_SECONDS = 600    # local models on CPU can be slow
 
 # Gemini model. "gemini-flash-latest" always points at Google's current Flash
 # model, which is available on the free tier.
@@ -147,6 +158,27 @@ LLM_TRANSCRIPT_WINDOW_CHARS = 200_000
 
 # Number of transcript chunks retrieved as evidence for a grounded answer.
 LLM_QA_TOP_K = 8
+
+# ---------------------------------------------------------------------------
+# Quiz generator settings
+# ---------------------------------------------------------------------------
+
+QUIZ_QUESTION_COUNTS = (5, 10, 15)
+
+# Ask the LLM for a few extra questions, because some fail validation
+# (no supporting quote, duplicate, malformed options) and are dropped.
+QUIZ_EXTRA_CANDIDATES = 4
+
+# Transcript chunks with fewer words than this carry too little content to
+# base a question on.
+QUIZ_MIN_CHUNK_WORDS = 12
+
+# At most this much transcript text (characters) is sent per quiz request.
+# Longer videos are sampled evenly across their whole length.
+QUIZ_MAX_TRANSCRIPT_CHARS = 60_000
+
+# A topic where the student scored below this fraction is flagged for revision.
+QUIZ_WEAK_TOPIC_THRESHOLD = 0.6
 
 # ---------------------------------------------------------------------------
 # API settings (Milestone 8)

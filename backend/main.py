@@ -13,7 +13,10 @@ FastAPI backend exposing:
     POST /ingest/reindex/{video_id} -- (re)index an already-downloaded video
     POST /summarize        -- LLM summary / key takeaways / section summary
     POST /ask              -- LLM answer grounded in transcript passages
-                              (Gemini free tier or Claude, see services/llm.py)
+                              (Gemini free tier, Claude or local Ollama, see services/llm.py)
+    POST /quiz/generate    -- AI quiz from a video's transcript (answers stay on the server)
+    GET  /quiz/{quiz_id}   -- a generated quiz, without answers
+    POST /quiz/{quiz_id}/submit -- score answers; returns answers, explanations, timestamps
     GET  /app/             -- the frontend (same origin as the API)
 
 Run with:  uvicorn backend.main:app --reload
@@ -45,11 +48,16 @@ from backend.models.schemas import (
     SummaryResponse,
     AskRequest,
     AskResponse,
+    QuizGenerateRequest,
+    QuizPublic,
+    QuizSubmitRequest,
+    QuizResultResponse,
 )
 from backend.services.search import text_search, visual_search
 from backend.services.video_processor import get_video_duration, VideoProcessingError
 from backend.services.youtube_ingest import job_manager, load_video_info
 from backend.services.indexing_pipeline import get_index_state
+from backend.services.quiz import generate_quiz, load_quiz, public_view, score_quiz, QuizError, QuizNotFoundError
 from backend.services.text_index import TextIndexError
 from backend.services.visual_index import VisualIndexError
 from backend.services.summarizer import (
@@ -202,8 +210,10 @@ def get_ingest_job(job_id: str):
 def _llm_http_error(e: Exception) -> HTTPException:
     if isinstance(e, ValueError):
         return HTTPException(status_code=400, detail=str(e))
-    if isinstance(e, TranscriptNotFoundError):
+    if isinstance(e, (TranscriptNotFoundError, QuizNotFoundError)):
         return HTTPException(status_code=404, detail=str(e))
+    if isinstance(e, QuizError):
+        return HTTPException(status_code=422, detail=str(e))
     if isinstance(e, (TextIndexError, VisualIndexError)):
         return HTTPException(status_code=409, detail=str(e))
     if isinstance(e, LLMUnavailableError):
@@ -228,6 +238,33 @@ def ask_endpoint(request: AskRequest):
         _check_safe_name(request.video_id, "video id")
     try:
         return answer_question(request.question, video_id=request.video_id, top_k=request.top_k)
+    except Exception as e:
+        raise _llm_http_error(e)
+
+
+@app.post("/quiz/generate", response_model=QuizPublic)
+def quiz_generate_endpoint(request: QuizGenerateRequest):
+    """Generates a quiz from the video's transcript. Answers are NOT included."""
+    _check_safe_name(request.video_id, "video id")
+    try:
+        return generate_quiz(request.video_id, request.num_questions, request.difficulty, request.question_type)
+    except Exception as e:
+        raise _llm_http_error(e)
+
+
+@app.get("/quiz/{quiz_id}", response_model=QuizPublic)
+def quiz_get_endpoint(quiz_id: str):
+    try:
+        return public_view(load_quiz(quiz_id))
+    except Exception as e:
+        raise _llm_http_error(e)
+
+
+@app.post("/quiz/{quiz_id}/submit", response_model=QuizResultResponse)
+def quiz_submit_endpoint(quiz_id: str, request: QuizSubmitRequest):
+    """Scores the answers on the server and reveals answers + explanations."""
+    try:
+        return score_quiz(quiz_id, request.answers)
     except Exception as e:
         raise _llm_http_error(e)
 

@@ -80,6 +80,16 @@ on your own machine with real videos/models.
       request reached Google's API in the sandbox (rejected only for the fake key)
 - [ ] Real summary with a valid key — **run on your machine** with `GEMINI_API_KEY` set
 
+## Milestone 14 — AI Quiz Generator
+- [x] `POST /quiz/generate`, `GET /quiz/{id}`, `POST /quiz/{id}/submit`
+      (server-side scoring; answer key never sent before submission)
+- [x] Grounding validation (passage quote check, option/answer-key checks,
+      dedupe, fewer questions instead of padding), topic-wise assessment
+- [x] Local Ollama provider added to `llm.py` (free, no key)
+- [x] Unit + API tests (`tests/test_quiz.py`); full UI flow verified in
+      headless Chromium against a fake Ollama server
+- [ ] Question quality with a real model — **run on your machine**
+
 ## Approximate Completion
 
 **Code: ~100% of Core + Visual Search MVP implemented.**

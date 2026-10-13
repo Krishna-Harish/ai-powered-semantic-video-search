@@ -30,6 +30,12 @@ const summaryStatus = document.getElementById("summaryStatus");
 const summaryOutput = document.getElementById("summaryOutput");
 const sectionStart = document.getElementById("sectionStart");
 const sectionEnd = document.getElementById("sectionEnd");
+const quizCount = document.getElementById("quizCount");
+const quizDifficulty = document.getElementById("quizDifficulty");
+const quizType = document.getElementById("quizType");
+const generateQuizBtn = document.getElementById("generateQuizBtn");
+const quizStatus = document.getElementById("quizStatus");
+const quizArea = document.getElementById("quizArea");
 
 const PLACEHOLDERS = {
   text: "e.g. Where is gradient descent explained?",
@@ -166,6 +172,7 @@ function setActiveVideo(videoId) {
 // Warns when the selected video can't be searched/summarized yet, with the
 // reason saved by the last indexing attempt and a button to retry it.
 function updateIndexBanner() {
+  updateQuizAvailability();
   const v = videosById[videoSelect.value];
   if (!v || (v.text_indexed && v.visual_indexed)) {
     indexBanner.hidden = true;
@@ -480,6 +487,249 @@ function renderSummary(data) {
     });
     summaryOutput.appendChild(ul);
   }
+}
+
+// ---------------------------------------------------------------------------
+// AI quiz
+// The server keeps the answer key; this page only ever has the questions
+// until the quiz is submitted and scored on the backend.
+// ---------------------------------------------------------------------------
+
+let quiz = null; // { data: public quiz, answers: {questionId: optionIndex}, index }
+let quizBusy = false;
+
+function updateQuizAvailability() {
+  const v = videosById[videoSelect.value];
+  const ready = Boolean(v && v.text_indexed);
+  generateQuizBtn.disabled = quizBusy || !ready;
+  if (!quizBusy && !quiz) {
+    quizStatus.textContent = v && !ready ? "This video has no transcript yet. Click 'Index now' above the player first." : "";
+  }
+}
+
+function el(tag, className, text) {
+  const node = document.createElement(tag);
+  if (className) node.className = className;
+  if (text != null) node.textContent = text;
+  return node;
+}
+
+generateQuizBtn.addEventListener("click", async () => {
+  const videoId = videoSelect.value;
+  if (!videoId) return;
+  if (quiz && !quiz.submitted && Object.keys(quiz.answers).length > 0 &&
+      !window.confirm("Discard the quiz in progress and generate a new one?")) {
+    return;
+  }
+
+  quizBusy = true;
+  quiz = null;
+  quizArea.innerHTML = "";
+  generateQuizBtn.textContent = "Generating...";
+  updateQuizAvailability();
+  quizStatus.textContent = "Writing questions from the video's transcript... (a local model can take a minute or two)";
+  try {
+    const data = await apiPost("/quiz/generate", {
+      video_id: videoId,
+      num_questions: Number(quizCount.value),
+      difficulty: quizDifficulty.value,
+      question_type: quizType.value,
+    });
+    quiz = { data, answers: {}, index: 0, submitted: false };
+    quizStatus.textContent = data.notice || "";
+    renderQuizQuestion();
+  } catch (err) {
+    quizStatus.textContent = `Quiz generation failed: ${err.message}`;
+  } finally {
+    quizBusy = false;
+    generateQuizBtn.textContent = "Generate quiz";
+    updateQuizAvailability();
+  }
+});
+
+function renderQuizQuestion() {
+  const { data, answers, index } = quiz;
+  const q = data.questions[index];
+  const total = data.questions.length;
+  const answered = Object.keys(answers).length;
+  quizArea.innerHTML = "";
+
+  const card = el("div", "quiz-card");
+
+  const top = el("div", "quiz-progress-row");
+  top.appendChild(el("span", "quiz-progress-text", `Question ${index + 1} of ${total}`));
+  top.appendChild(el("span", "quiz-progress-text", `${answered} answered`));
+  card.appendChild(top);
+  const bar = el("div", "quiz-progress");
+  const fill = el("div", "quiz-progress-fill");
+  fill.style.width = `${(100 * answered) / total}%`;
+  bar.appendChild(fill);
+  card.appendChild(bar);
+
+  const meta = el("div", "quiz-meta");
+  meta.appendChild(el("span", "quiz-tag", q.topic));
+  meta.appendChild(el("span", "quiz-tag quiz-tag-muted", q.type === "mcq" ? "Multiple choice" : "True / False"));
+  card.appendChild(meta);
+
+  card.appendChild(el("p", "quiz-question", q.question));
+
+  const options = el("div", "quiz-options");
+  options.setAttribute("role", "radiogroup");
+  q.options.forEach((opt, i) => {
+    const btn = el("button", "quiz-option");
+    btn.type = "button";
+    btn.setAttribute("role", "radio");
+    const selected = answers[q.id] === i;
+    btn.setAttribute("aria-checked", String(selected));
+    if (selected) btn.classList.add("selected");
+    if (q.type === "mcq") btn.appendChild(el("span", "quiz-option-letter", "ABCD"[i]));
+    btn.appendChild(el("span", null, opt));
+    btn.addEventListener("click", () => {
+      quiz.answers[q.id] = i;
+      renderQuizQuestion();
+    });
+    options.appendChild(btn);
+  });
+  card.appendChild(options);
+
+  // Jump straight to any question; answered ones are marked.
+  const dots = el("div", "quiz-dots");
+  data.questions.forEach((qq, i) => {
+    const dot = el("button", "quiz-dot", String(i + 1));
+    dot.type = "button";
+    dot.title = `Question ${i + 1}`;
+    if (answers[qq.id] !== undefined) dot.classList.add("answered");
+    if (i === index) dot.classList.add("current");
+    dot.addEventListener("click", () => { quiz.index = i; renderQuizQuestion(); });
+    dots.appendChild(dot);
+  });
+  card.appendChild(dots);
+
+  const nav = el("div", "quiz-nav");
+  const prev = el("button", "secondary-btn", "Previous");
+  prev.type = "button";
+  prev.disabled = index === 0;
+  prev.addEventListener("click", () => { quiz.index -= 1; renderQuizQuestion(); });
+  const next = el("button", "secondary-btn", "Next");
+  next.type = "button";
+  next.disabled = index === total - 1;
+  next.addEventListener("click", () => { quiz.index += 1; renderQuizQuestion(); });
+  const submit = el("button", "primary-btn", "Submit quiz");
+  submit.type = "button";
+  submit.addEventListener("click", submitQuiz);
+  nav.append(prev, next, el("span", "quiz-nav-spacer"), submit);
+  card.appendChild(nav);
+
+  quizArea.appendChild(card);
+}
+
+async function submitQuiz() {
+  const total = quiz.data.questions.length;
+  const unanswered = total - Object.keys(quiz.answers).length;
+  if (unanswered > 0 && !window.confirm(`${unanswered} question(s) unanswered. They will count as wrong. Submit anyway?`)) {
+    return;
+  }
+  quizStatus.textContent = "Scoring...";
+  try {
+    const result = await apiPost(`/quiz/${quiz.data.quiz_id}/submit`, { answers: quiz.answers });
+    quiz.submitted = true;
+    quizStatus.textContent = "";
+    renderQuizResults(result);
+  } catch (err) {
+    quizStatus.textContent = `Could not submit the quiz: ${err.message}`;
+  }
+}
+
+function rewatchLink(videoId, start, end, label) {
+  return momentLink(videoId, start, label || `▶ Rewatch this section (${formatTimestamp(start)} – ${formatTimestamp(end)})`, "rewatch-link");
+}
+
+function renderQuizResults(r) {
+  quizArea.innerHTML = "";
+
+  // Score
+  const scoreCard = el("div", "quiz-card quiz-score");
+  const big = el("div", "quiz-score-big");
+  big.appendChild(el("span", "quiz-score-num", `${r.score} / ${r.total}`));
+  const band = r.percentage >= 80 ? "good" : r.percentage >= 60 ? "ok" : "low";
+  big.appendChild(el("span", `quiz-score-pct ${band}`, `${r.percentage}%`));
+  scoreCard.appendChild(big);
+  const verdict = r.percentage >= 80 ? "Great job!" : r.percentage >= 60 ? "Good effort. Review the topics marked below."
+    : "Worth another look. Rewatch the sections suggested below.";
+  scoreCard.appendChild(el("p", "quiz-verdict", verdict));
+  if (r.answered < r.total) {
+    scoreCard.appendChild(el("p", "hint", `${r.total - r.answered} question(s) were left unanswered.`));
+  }
+  const again = el("button", "secondary-btn", "Take another quiz");
+  again.type = "button";
+  again.addEventListener("click", () => {
+    quiz = null;
+    quizArea.innerHTML = "";
+    generateQuizBtn.focus();
+    updateQuizAvailability();
+  });
+  scoreCard.appendChild(again);
+  quizArea.appendChild(scoreCard);
+
+  // Topic-wise assessment
+  const topicsCard = el("div", "quiz-card");
+  topicsCard.appendChild(el("h3", "quiz-subhead", "By topic"));
+  r.topics.forEach((t) => {
+    const row = el("div", `quiz-topic${t.needs_revision ? " weak" : ""}`);
+    const head = el("div", "quiz-topic-head");
+    head.appendChild(el("span", "quiz-topic-name", t.topic));
+    head.appendChild(el("span", "quiz-topic-score", `${t.correct}/${t.total} · ${t.percentage}%`));
+    row.appendChild(head);
+    const tbar = el("div", "quiz-progress");
+    const tfill = el("div", "quiz-progress-fill");
+    tfill.style.width = `${t.percentage}%`;
+    tbar.appendChild(tfill);
+    row.appendChild(tbar);
+    if (t.needs_revision) {
+      const revise = el("div", "quiz-revise");
+      revise.appendChild(el("span", "quiz-revise-label", "Needs revision:"));
+      t.revise_sections.forEach((s) => {
+        revise.appendChild(rewatchLink(r.video_id, s.start, s.end, `▶ ${formatTimestamp(s.start)} – ${formatTimestamp(s.end)}`));
+      });
+      row.appendChild(revise);
+    }
+    topicsCard.appendChild(row);
+  });
+  quizArea.appendChild(topicsCard);
+
+  // Every question with the correct answer and explanation
+  const review = el("div", "quiz-card");
+  review.appendChild(el("h3", "quiz-subhead", "Answers and explanations"));
+  r.results.forEach((q, i) => {
+    const item = el("div", `quiz-review ${q.is_correct ? "correct" : "wrong"}`);
+    const head = el("div", "quiz-review-head");
+    head.appendChild(el("span", "quiz-review-mark", q.is_correct ? "✓" : "✗"));
+    head.appendChild(el("span", "quiz-review-question", `${i + 1}. ${q.question}`));
+    item.appendChild(head);
+
+    const list = el("ul", "quiz-review-options");
+    q.options.forEach((opt, oi) => {
+      const li = el("li", null, opt);
+      if (oi === q.correct_index) {
+        li.classList.add("is-answer");
+        li.appendChild(el("span", "quiz-badge", "Correct answer"));
+      }
+      if (oi === q.selected_index && oi !== q.correct_index) {
+        li.classList.add("is-wrong-pick");
+        li.appendChild(el("span", "quiz-badge", "Your answer"));
+      } else if (oi === q.selected_index) {
+        li.appendChild(el("span", "quiz-badge", "Your answer"));
+      }
+      list.appendChild(li);
+    });
+    item.appendChild(list);
+    if (q.selected_index == null) item.appendChild(el("p", "hint", "Not answered."));
+    item.appendChild(el("p", "quiz-explanation", q.explanation));
+    item.appendChild(rewatchLink(r.video_id, q.start, q.end));
+    review.appendChild(item);
+  });
+  quizArea.appendChild(review);
+  scoreCard.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
 // ---------------------------------------------------------------------------

@@ -214,9 +214,20 @@ The `/video/{video_id}` endpoint answers HTTP Range requests, which lets the
 browser seek straight to the timestamp without downloading the whole file
 first (this is why `fastapi` is pinned to 0.115.6 or later).
 
-## AI Summaries and Questions (Gemini free tier or Claude)
+## AI Summaries, Questions and Quizzes (Gemini, Ollama or Claude)
 
-Needs one API key. The free option is Google Gemini:
+Summaries, Ask AI and the quiz generator need an LLM. Two free options:
+
+**Option A, local and offline: Ollama (no key at all).** Install Ollama
+from https://ollama.com, then once:
+```bash
+ollama pull llama3.2
+```
+Keep the Ollama app running. With no API key set, the backend uses it
+automatically. Pick another model with `OLLAMA_MODEL` (e.g. `qwen2.5:7b` or
+`llama3.1:8b` give better quizzes but need ~8 GB of free RAM).
+
+**Option B, Google Gemini (free tier, needs internet):**
 
 1. Create a free key at https://aistudio.google.com/apikey (no billing needed).
 2. Set it before starting the backend:
@@ -224,9 +235,10 @@ Needs one API key. The free option is Google Gemini:
    export GEMINI_API_KEY=your-key      # Windows (cmd): set GEMINI_API_KEY=your-key
    ```
 
-If you also have a paid Anthropic key (`ANTHROPIC_API_KEY`), Claude is used
-instead; without it, Gemini is used automatically. To force one, set
-`LLM_PROVIDER=gemini` or `LLM_PROVIDER=anthropic`. The Gemini model defaults
+With `LLM_PROVIDER=auto` (default) the order is: Claude if
+`ANTHROPIC_API_KEY` is set (paid, optional), else Gemini if `GEMINI_API_KEY`
+is set, else local Ollama. To force one, set `LLM_PROVIDER=ollama`,
+`gemini` or `anthropic`. The Gemini model defaults
 to `gemini-flash-latest` (free tier); change it with `GEMINI_MODEL`.
 
 The free tier limits requests per minute and per day. If you hit the limit
@@ -255,6 +267,36 @@ Whole-video summaries/takeaways are cached in `data/metadata/` (pass
 summarized in parts and then combined. Provider and models are set in
 `backend/config.py` (`LLM_PROVIDER`, `GEMINI_MODEL`, `LLM_MODEL`).
 
+## Quiz Generator
+
+Below the player and search panels: pick **5, 10 or 15** questions,
+**Easy / Medium / Hard**, and **Multiple choice, True/False or Mixed**, then
+click **Generate quiz** (the selected video must be indexed).
+
+- One question at a time, with progress, Previous/Next and a numbered
+  navigator; answers are revealed only after **Submit quiz**.
+- Results: score and percentage, the correct answer and an explanation
+  for every question, and **Rewatch this section**, which plays the part of
+  the video where the concept is explained.
+- **By topic**: questions are grouped by concept; topics scored below 60%
+  are marked "Needs revision" with links to the sections to rewatch.
+
+How the questions stay grounded in the video:
+- It reuses the transcript chunks built during indexing (no re-processing).
+  Contentless chunks (fewer than 12 words) are skipped.
+- The LLM sees only the transcript, as numbered passages with time ranges.
+  Every question must name its passage and quote it; the backend drops any
+  question whose quote isn't actually in that passage, plus malformed ones
+  (wrong option count, duplicate options, "all of the above", invalid
+  answer key, duplicate questions).
+- Timestamps come from the transcript data, not from the model.
+- If too few questions survive, the quiz is shorter and says why, rather
+  than being padded with invented questions.
+
+Scoring is done on the server: the quiz, with its answer key, is stored in
+`data/quizzes/`, and the browser receives only questions and options until
+it submits.
+
 API endpoints:
 
 | Endpoint | Purpose |
@@ -263,6 +305,9 @@ API endpoints:
 | `GET /ingest/jobs`, `GET /ingest/jobs/{job_id}` | Ingestion progress |
 | `POST /summarize` `{"video_id", "mode": "summary"\|"takeaways"\|"section", "start", "end"}` | LLM summary |
 | `POST /ask` `{"question", "video_id"?}` | Answer grounded in transcript passages |
+| `POST /quiz/generate` `{"video_id", "num_questions": 5\|10\|15, "difficulty", "question_type"}` | Generate a quiz (no answers returned) |
+| `GET /quiz/{quiz_id}` | Fetch a generated quiz (no answers) |
+| `POST /quiz/{quiz_id}/submit` `{"answers": {"q1": 0, ...}}` | Score on the server; returns answers, explanations, timestamps, topic breakdown |
 
 ## How Text Search Works
 

@@ -502,10 +502,49 @@ class TestLLMProvider(unittest.TestCase):
                 self.assertEqual(self.llm.active_model(), self.llm.GEMINI_MODEL)
             with self.env(GOOGLE_API_KEY="g"):
                 self.assertEqual(self.llm.active_provider(), "gemini")
-            with self.env():
-                self.assertIsNone(self.llm.active_provider())
-                with self.assertRaises(self.llm.LLMUnavailableError):
+            with self.env(), mock.patch.object(self.llm, "OLLAMA_HOST", "http://127.0.0.1:9"):
+                # no key at all -> free local Ollama; a clear error if it isn't running
+                self.assertEqual(self.llm.active_provider(), "ollama")
+                with self.assertRaises(self.llm.LLMUnavailableError) as ctx:
                     self.llm.generate_json("s", "p", {})
+                self.assertIn("ollama pull", str(ctx.exception))
+                self.assertIn("GEMINI_API_KEY", str(ctx.exception))
+
+    def test_ollama_provider_against_local_server(self):
+        import threading
+        from http.server import BaseHTTPRequestHandler, HTTPServer
+        received = {}
+
+        class Handler(BaseHTTPRequestHandler):
+            def do_POST(self):
+                received.update(json.loads(self.rfile.read(int(self.headers["Content-Length"]))))
+                if received["model"] == "missing-model":
+                    self.send_response(404)
+                    self.end_headers()
+                    self.wfile.write(b'{"error":"model not found"}')
+                    return
+                self.send_response(200)
+                self.end_headers()
+                self.wfile.write(json.dumps({"message": {"content": '{"ok": true}'}, "done_reason": "stop"}).encode())
+
+            def log_message(self, *a):
+                pass
+
+        server = HTTPServer(("127.0.0.1", 0), Handler)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        host = f"http://127.0.0.1:{server.server_port}"
+        try:
+            with mock.patch.object(self.llm, "OLLAMA_HOST", host), mock.patch.object(self.llm, "LLM_PROVIDER", "ollama"):
+                self.assertEqual(self.llm.generate_json("sys", "prompt", {"type": "object"}), {"ok": True})
+                self.assertEqual(received["format"], {"type": "object"})
+                self.assertEqual(received["messages"][0], {"role": "system", "content": "sys"})
+                self.assertFalse(received["stream"])
+                with mock.patch.object(self.llm, "OLLAMA_MODEL", "missing-model"):
+                    with self.assertRaises(self.llm.LLMUnavailableError) as ctx:
+                        self.llm.generate_json("sys", "prompt", {})
+                    self.assertIn("ollama pull missing-model", str(ctx.exception))
+        finally:
+            server.shutdown()
 
     def test_forced_provider(self):
         with mock.patch.object(self.llm, "LLM_PROVIDER", "gemini"), self.env(ANTHROPIC_API_KEY="a"):

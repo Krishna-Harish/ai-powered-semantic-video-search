@@ -2,20 +2,23 @@
 llm.py
 
 One function, generate_json(), that sends a prompt to an LLM and returns
-JSON matching a schema. Two providers are supported:
+JSON matching a schema. Three providers are supported:
 
     anthropic -- Claude API (paid), used when ANTHROPIC_API_KEY is set
     gemini    -- Google Gemini API (has a free tier), used when
                  GEMINI_API_KEY (or GOOGLE_API_KEY) is set
+    ollama    -- a local model served by Ollama (free, offline, no key)
 
 LLM_PROVIDER in config.py chooses: "auto" (default) prefers Claude when its
-key is set and otherwise falls back to Gemini, so a free Gemini key is
-enough to use summaries and Q&A.
+key is set, then Gemini when its key is set, and otherwise uses a local
+Ollama model, so no paid API (or any key at all) is required.
 """
 
 import os
 import json
 import sys
+import urllib.error
+import urllib.request
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
@@ -25,6 +28,10 @@ from backend.config import (
     LLM_EFFORT,
     GEMINI_MODEL,
     LLM_MAX_OUTPUT_TOKENS,
+    OLLAMA_HOST,
+    OLLAMA_MODEL,
+    OLLAMA_CONTEXT_TOKENS,
+    OLLAMA_TIMEOUT_SECONDS,
 )
 
 _clients = {}  # provider -> lazily created SDK client
@@ -49,19 +56,19 @@ def _gemini_key():
 
 
 def active_provider():
-    """Returns "anthropic", "gemini", or None if nothing is configured."""
-    if LLM_PROVIDER in ("anthropic", "gemini"):
+    """Returns "anthropic", "gemini" or "ollama" (the keyless local fallback)."""
+    if LLM_PROVIDER in ("anthropic", "gemini", "ollama"):
         return LLM_PROVIDER
     if _has_anthropic_key():
         return "anthropic"
     if _gemini_key():
         return "gemini"
-    return None
+    return "ollama"
 
 
 def active_model():
     provider = active_provider()
-    return {"anthropic": LLM_MODEL, "gemini": GEMINI_MODEL}.get(provider, "none")
+    return {"anthropic": LLM_MODEL, "gemini": GEMINI_MODEL, "ollama": OLLAMA_MODEL}[provider]
 
 
 def generate_json(system: str, prompt: str, schema: dict) -> dict:
@@ -70,10 +77,7 @@ def generate_json(system: str, prompt: str, schema: dict) -> dict:
         return _anthropic_json(system, prompt, schema)
     if provider == "gemini":
         return _gemini_json(system, prompt, schema)
-    raise LLMUnavailableError(
-        "No LLM is configured. Set GEMINI_API_KEY (free key from https://aistudio.google.com/apikey) "
-        "or ANTHROPIC_API_KEY."
-    )
+    return _ollama_json(system, prompt, schema)
 
 
 def _parse_json(text):
@@ -204,3 +208,55 @@ def _gemini_json(system: str, prompt: str, schema: dict) -> dict:
         raise LLMError("The model declined to process this transcript.")
 
     return _parse_json(response.text)
+
+
+# ---------------------------------------------------------------------------
+# Ollama -- local model, free and offline
+# ---------------------------------------------------------------------------
+
+_NO_LLM_HINT = (
+    "Either start Ollama and run `ollama pull {model}` (free, local), or set GEMINI_API_KEY "
+    "(free key from https://aistudio.google.com/apikey)."
+)
+
+
+def _ollama_json(system: str, prompt: str, schema: dict) -> dict:
+    body = json.dumps({
+        "model": OLLAMA_MODEL,
+        "messages": [
+            {"role": "system", "content": system},
+            {"role": "user", "content": prompt},
+        ],
+        "stream": False,
+        "format": schema,  # Ollama constrains the output to this JSON schema
+        "options": {"num_ctx": OLLAMA_CONTEXT_TOKENS, "temperature": 0.2},
+    }).encode("utf-8")
+    request = urllib.request.Request(
+        f"{OLLAMA_HOST.rstrip('/')}/api/chat", data=body, headers={"Content-Type": "application/json"}
+    )
+    # Ollama runs on this machine: bypass any HTTP(S)_PROXY environment settings.
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+
+    try:
+        with opener.open(request, timeout=OLLAMA_TIMEOUT_SECONDS) as response:
+            data = json.loads(response.read().decode("utf-8"))
+    except urllib.error.HTTPError as e:
+        detail = e.read().decode("utf-8", "replace")
+        if e.code == 404 or "not found" in detail.lower():
+            raise LLMUnavailableError(
+                f"The Ollama model '{OLLAMA_MODEL}' is not installed. Run: ollama pull {OLLAMA_MODEL}"
+            )
+        raise LLMError(f"Ollama error ({e.code}): {detail[:300]}")
+    except (urllib.error.URLError, ConnectionError) as e:
+        raise LLMUnavailableError(
+            f"No LLM is available: no API key is set and Ollama is not reachable at {OLLAMA_HOST} "
+            f"({getattr(e, 'reason', e)}). " + _NO_LLM_HINT.format(model=OLLAMA_MODEL)
+        )
+    except TimeoutError:
+        raise LLMError(f"Ollama did not answer within {OLLAMA_TIMEOUT_SECONDS}s. Try a smaller model.")
+    except json.JSONDecodeError:
+        raise LLMError("Ollama returned an unreadable response.")
+
+    if data.get("done_reason") == "length":
+        raise LLMError("The model's response was cut off. Try fewer questions or a shorter section.")
+    return _parse_json((data.get("message") or {}).get("content"))
