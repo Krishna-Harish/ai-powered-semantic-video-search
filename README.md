@@ -118,18 +118,23 @@ have real content to retrieve.
 ## Installation
 
 ### Prerequisites
-- Python 3.10 or 3.11
+- Python 3.10 – 3.14
 - FFmpeg installed and on PATH (`ffmpeg -version` should work)
 
 ### Setup
 
 ```bash
 python -m venv venv
-venv\Scripts\activate        # Windows
+venv\Scripts\activate        # Windows (PowerShell: venv\Scripts\Activate.ps1)
 # source venv/bin/activate   # Mac/Linux
 
+python -m pip install --upgrade pip
 pip install -r requirements.txt
 ```
+
+`requirements.txt` lists minimum versions rather than exact pins, so pip
+picks builds that exist for your Python version (exact old pins such as
+`torch==2.4.1` have no builds for Python 3.13+).
 
 First run of transcription/embedding steps will download pretrained model
 weights automatically (requires internet the first time only; cached

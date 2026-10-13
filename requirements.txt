@@ -1,26 +1,28 @@
+# Minimum versions, not exact pins, so pip can pick builds that exist for
+# your Python version (tested with Python 3.10 - 3.14).
+
 # Web backend
-fastapi==0.115.6   # >=0.115.3 pulls a Starlette with HTTP Range support (needed for seeking)
-uvicorn[standard]==0.30.6
-pydantic==2.9.2
-python-multipart==0.0.9
+fastapi>=0.115.6            # >=0.115.3 pulls a Starlette with HTTP Range support (needed for seeking)
+uvicorn[standard]>=0.30.6
+pydantic>=2.9.2
+python-multipart>=0.0.9
 
 # Speech recognition (pretrained Whisper, inference only)
-faster-whisper==1.0.3
+faster-whisper>=1.0.3
 
 # Text embeddings (pretrained sentence-transformer, inference only)
-sentence-transformers==3.1.1
+sentence-transformers>=3.1.1
 
 # Visual embeddings (pretrained CLIP, inference only)
-open_clip_torch==2.26.1
-torch==2.4.1
+open_clip_torch>=2.26.1
+torch>=2.4.1
 
 # Vector similarity search
-faiss-cpu==1.8.0
+faiss-cpu>=1.8.0
 
-# Video/image processing
-opencv-python==4.10.0.84
-Pillow==10.4.0
-numpy==1.26.4
+# Image / array handling
+Pillow>=10.4.0
+numpy>=1.26.4
 
 # YouTube URL ingestion (download step of POST /ingest/youtube)
 yt-dlp>=2024.8.6
