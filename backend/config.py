@@ -12,6 +12,15 @@ import os
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
+# Load settings such as GEMINI_API_KEY from the project's .env file (copy
+# .env.example to .env), so they don't have to be typed in every terminal.
+# Variables already set in the terminal take precedence over the file.
+try:
+    from dotenv import load_dotenv
+    load_dotenv(os.path.join(BASE_DIR, ".env"))
+except ImportError:  # python-dotenv not installed: use terminal variables only
+    pass
+
 DATA_DIR = os.path.join(BASE_DIR, "data")
 VIDEOS_DIR = os.path.join(DATA_DIR, "videos")
 AUDIO_DIR = os.path.join(DATA_DIR, "audio")

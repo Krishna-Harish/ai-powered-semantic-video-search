@@ -130,7 +130,13 @@ venv\Scripts\activate        # Windows (PowerShell: venv\Scripts\Activate.ps1)
 
 python -m pip install --upgrade pip
 pip install -r requirements.txt
+
+copy .env.example .env       # Windows (Mac/Linux: cp .env.example .env)
 ```
+
+Then open `.env` and fill in your settings (e.g. `GEMINI_API_KEY`). The
+backend reads it on startup, so nothing has to be typed in the terminal.
+`.env` is in `.gitignore`, so keys are never committed.
 
 `requirements.txt` lists minimum versions rather than exact pins, so pip
 picks builds that exist for your Python version (exact old pins such as
@@ -195,8 +201,8 @@ python scripts/ingest_youtube.py https://www.youtube.com/watch?v=VIDEO_ID
 Transcription is the slow step: on a laptop CPU the default Whisper `small`
 model takes very roughly 0.5–1.5x the video's length (the first run also
 downloads the model). The job shows a live percentage. For faster, less
-accurate transcripts, set `WHISPER_MODEL=base` before starting the backend
-(PowerShell: `$env:WHISPER_MODEL = "base"`).
+accurate transcripts, set `WHISPER_MODEL=base` in `.env` and restart the
+backend.
 
 Limits are set in `backend/config.py` (`YOUTUBE_MAX_HEIGHT`,
 `YOUTUBE_MAX_DURATION_SECONDS`, default 2 hours). Live streams and playlists
@@ -230,9 +236,9 @@ automatically. Pick another model with `OLLAMA_MODEL` (e.g. `qwen2.5:7b` or
 **Option B, Google Gemini (free tier, needs internet):**
 
 1. Create a free key at https://aistudio.google.com/apikey (no billing needed).
-2. Set it before starting the backend:
-   ```bash
-   export GEMINI_API_KEY=your-key      # Windows (cmd): set GEMINI_API_KEY=your-key
+2. Put it in the `.env` file in the project folder, then restart the backend:
+   ```
+   GEMINI_API_KEY=your-key
    ```
 
 With `LLM_PROVIDER=auto` (default), Gemini is used if `GEMINI_API_KEY` is

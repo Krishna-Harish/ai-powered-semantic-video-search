@@ -1,6 +1,9 @@
 # Minimum versions, not exact pins, so pip can pick builds that exist for
 # your Python version (tested with Python 3.10 - 3.14).
 
+# Reads settings like GEMINI_API_KEY from the .env file (see .env.example)
+python-dotenv>=1.0.0
+
 # Web backend
 fastapi>=0.115.6            # >=0.115.3 pulls a Starlette with HTTP Range support (needed for seeking)
 uvicorn[standard]>=0.30.6
