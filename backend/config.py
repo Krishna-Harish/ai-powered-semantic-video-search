@@ -94,6 +94,41 @@ DEFAULT_TOP_K = 5
 MIN_SIMILARITY_SCORE = 0.15  # results below this score are filtered out
 
 # ---------------------------------------------------------------------------
+# YouTube ingestion settings
+# ---------------------------------------------------------------------------
+
+# Videos ingested from a YouTube URL are stored as data/videos/yt_<youtube_id>.mp4
+YOUTUBE_VIDEO_ID_PREFIX = "yt_"
+
+# Cap the download resolution: frames are only used for CLIP (224px input),
+# so higher resolutions just cost disk space and download time.
+YOUTUBE_MAX_HEIGHT = 720
+
+# Refuse videos longer than this (seconds). Whisper on CPU is roughly
+# real-time with the "small" model, so very long videos take a long time.
+# Set to None to disable the limit.
+YOUTUBE_MAX_DURATION_SECONDS = 2 * 60 * 60
+
+# ---------------------------------------------------------------------------
+# LLM summary / Q&A settings (Claude API)
+# ---------------------------------------------------------------------------
+
+# Requires ANTHROPIC_API_KEY in the environment (or an `ant auth login` profile).
+LLM_MODEL = "claude-opus-5-5"
+
+# Thinking depth / token spend: low | medium | high | xhigh | max
+LLM_EFFORT = "medium"
+
+LLM_MAX_OUTPUT_TOKENS = 16000
+
+# Transcripts longer than this (characters of "[mm:ss] text" lines) are
+# summarized window-by-window and then combined, instead of in one request.
+LLM_TRANSCRIPT_WINDOW_CHARS = 200_000
+
+# Number of transcript chunks retrieved as evidence for a grounded answer.
+LLM_QA_TOP_K = 8
+
+# ---------------------------------------------------------------------------
 # API settings (Milestone 8)
 # ---------------------------------------------------------------------------
 

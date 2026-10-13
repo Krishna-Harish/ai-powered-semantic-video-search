@@ -58,6 +58,26 @@ on your own machine with real videos/models.
       **must be run on your machine**, since the build sandbox has no
       internet access to install torch/faiss/whisper/etc.
 
+## Milestone 11 — YouTube URL Ingestion
+- [x] `POST /ingest/youtube` + job polling, `scripts/ingest_youtube.py`,
+      URL box with live job status in the frontend
+- [x] URL parsing, download handling (faked yt-dlp), job queue and API
+      errors covered by `tests/test_new_features.py`
+- [ ] Real download — **run on your machine** (the build sandbox blocks YouTube)
+
+## Milestone 12 — Direct Timestamp Playback
+- [x] Results, summary points and answer citations link to
+      `#v=<video_id>&t=<seconds>`; player switches video and seeks
+- [x] HTTP Range support on `/video/{id}` (fastapi 0.115.6), tested
+- [x] Verified in headless Chromium: deep link on load, result click,
+      summary chip and answer citation all seek to the right second
+
+## Milestone 13 — LLM Summaries and Grounded Q&A
+- [x] `POST /summarize` (summary / takeaways / section) and `POST /ask`
+- [x] Prompting, timestamp snapping, citations, caching and long-transcript
+      splitting tested with a faked Claude response
+- [ ] Real Claude API call — **run on your machine** with `ANTHROPIC_API_KEY` set
+
 ## Approximate Completion
 
 **Code: ~100% of Core + Visual Search MVP implemented.**

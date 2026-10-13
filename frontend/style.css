@@ -80,7 +80,7 @@ video {
   margin-bottom: 12px;
 }
 
-.search-box input { flex: 1; }
+.search-box input { flex: 1; min-width: 0; }
 
 button#searchBtn {
   background: #3b6df0;
@@ -105,6 +105,9 @@ button#searchBtn:hover { background: #2f5bd6; }
 }
 
 .result-card {
+  display: block;
+  color: inherit;
+  text-decoration: none;
   background: #1c2029;
   border: 1px solid #2a2f3a;
   border-radius: 8px;
@@ -140,6 +143,7 @@ button#searchBtn:hover { background: #2f5bd6; }
 }
 
 .jump-btn {
+  display: inline-block;
   background: transparent;
   border: 1px solid #3b6df0;
   color: #3b6df0;
@@ -149,4 +153,166 @@ button#searchBtn:hover { background: #2f5bd6; }
   cursor: pointer;
 }
 
-.jump-btn:hover { background: #3b6df0; color: white; }
+.jump-btn:hover,
+.result-card:hover .jump-btn { background: #3b6df0; color: white; }
+
+.result-range { color: #9aa0ab; font-size: 0.8rem; margin-left: 8px; }
+
+/* ---- YouTube ingestion ---- */
+
+.ingest-panel {
+  margin: 8px 32px 0;
+  background: #171a21;
+  border-radius: 12px;
+  padding: 14px 16px;
+}
+
+.ingest-form { display: flex; gap: 8px; }
+
+input[type="url"] {
+  flex: 1;
+  min-width: 0;
+  background: #232733;
+  color: #e6e6e6;
+  border: 1px solid #333844;
+  border-radius: 6px;
+  padding: 8px 10px;
+  font-size: 0.9rem;
+}
+
+button#ingestBtn {
+  background: #3b6df0;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  padding: 8px 18px;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+button#ingestBtn:disabled { opacity: 0.6; cursor: wait; }
+
+.hint { color: #7d8492; font-size: 0.8rem; margin: 6px 0 0; }
+
+.jobs-list { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+
+.job-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 0.85rem;
+  background: #1c2029;
+  border-radius: 6px;
+  padding: 6px 10px;
+  flex-wrap: wrap;
+}
+
+.job-status {
+  text-transform: uppercase;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: #2a2f3a;
+}
+
+.job-running .job-status, .job-queued .job-status { background: #3b6df0; color: white; }
+.job-completed .job-status { background: #1f7a3a; color: white; }
+.job-failed .job-status { background: #a33a3a; color: white; }
+.job-name { font-weight: 600; overflow-wrap: anywhere; }
+.job-detail { color: #9aa0ab; flex: 1; overflow-wrap: anywhere; }
+.job-warning { color: #d9b44a; }
+
+/* ---- Player extras ---- */
+
+.now-playing-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+  min-height: 24px;
+}
+
+.now-playing { color: #6be08a; font-size: 0.85rem; }
+
+.link-btn {
+  background: transparent;
+  border: none;
+  color: #7aa2ff;
+  cursor: pointer;
+  font-size: 0.8rem;
+  padding: 2px 4px;
+}
+
+.link-btn:hover { text-decoration: underline; }
+
+/* ---- Summaries ---- */
+
+.summary-panel { margin-top: 14px; border-top: 1px solid #2a2f3a; padding-top: 10px; }
+.summary-panel h2 { font-size: 1rem; margin: 0 0 8px; }
+
+.summary-actions, .section-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+  font-size: 0.85rem;
+}
+
+.section-row input { width: 80px; }
+
+.secondary-btn {
+  background: #1c2029;
+  color: #e6e6e6;
+  border: 1px solid #3b6df0;
+  border-radius: 6px;
+  padding: 6px 12px;
+  cursor: pointer;
+  font-size: 0.85rem;
+}
+
+.secondary-btn:hover { background: #3b6df0; color: white; }
+
+.summary-output { font-size: 0.92rem; line-height: 1.5; }
+.summary-output ul { padding-left: 18px; }
+.summary-output li { margin-bottom: 6px; }
+
+.time-chip {
+  display: inline-block;
+  background: #232a3d;
+  color: #7aa2ff;
+  border-radius: 4px;
+  padding: 0 6px;
+  font-size: 0.8rem;
+  font-variant-numeric: tabular-nums;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.time-chip:hover { background: #3b6df0; color: white; }
+
+/* ---- Ask AI ---- */
+
+.mode-btn { min-width: 0; padding: 10px 6px; }
+
+.scope-row { display: block; font-size: 0.85rem; color: #b6bcc7; margin: -4px 0 8px; }
+.scope-row[hidden] { display: none; }
+
+.answer-card {
+  background: #1a2233;
+  border: 1px solid #3b6df0;
+  border-radius: 8px;
+  padding: 12px;
+}
+
+.answer-text { margin: 0; line-height: 1.55; }
+
+@media (max-width: 600px) {
+  header { padding: 16px 16px 4px; }
+  main { padding: 12px 16px 24px; flex-direction: column; }
+  .ingest-panel { margin: 8px 16px 0; }
+  .video-panel, .search-panel { min-width: 0; }
+}

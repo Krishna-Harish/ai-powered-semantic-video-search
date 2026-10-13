@@ -1,5 +1,5 @@
 # Web backend
-fastapi==0.115.0
+fastapi==0.115.6   # >=0.115.3 pulls a Starlette with HTTP Range support (needed for seeking)
 uvicorn[standard]==0.30.6
 pydantic==2.9.2
 python-multipart==0.0.9
@@ -22,5 +22,8 @@ opencv-python==4.10.0.84
 Pillow==10.4.0
 numpy==1.26.4
 
-# Video downloading (used earlier to build the dataset)
-yt-dlp
+# YouTube URL ingestion (download step of POST /ingest/youtube)
+yt-dlp>=2024.8.6
+
+# LLM summaries / grounded Q&A (Claude API)
+anthropic>=1.0.0

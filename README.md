@@ -83,6 +83,8 @@ not implemented here.
 | Visual embeddings | OpenCLIP (ViT-B-32) |
 | Vector similarity search | FAISS |
 | Backend API | FastAPI |
+| YouTube download | yt-dlp |
+| Summaries / grounded Q&A | Claude API (`anthropic` SDK) |
 | Frontend | HTML / CSS / vanilla JS |
 
 ## AI Models Used, and Why
@@ -157,8 +159,87 @@ uvicorn backend.main:app --reload
 API docs available at `http://127.0.0.1:8000/docs`.
 
 **5. Open the frontend:**
-Open `frontend/index.html` directly in a browser (or serve it with any
-simple static server). Make sure the backend from step 4 is running first.
+Go to `http://127.0.0.1:8000/app/` (the backend serves the frontend). You can
+also open `frontend/index.html` directly in a browser; it then talks to the
+API at `http://127.0.0.1:8000`.
+
+## Adding a Video from YouTube
+
+Paste a YouTube URL into the box at the top of the page and click
+**Add video**. The backend then, as a background job:
+
+1. downloads the video with **yt-dlp** (max 720p, saved as
+   `data/videos/yt_<youtube_id>.mp4`, title saved to
+   `data/metadata/yt_<youtube_id>_info.json`),
+2. extracts audio and frames with FFmpeg,
+3. transcribes with Whisper and builds text embeddings,
+4. builds CLIP frame embeddings,
+5. rebuilds both FAISS indexes.
+
+The page shows each job's current stage and the new video appears in the
+video list when it is done. Jobs run one at a time and are kept in memory,
+so a backend restart forgets the job list (downloaded/indexed videos stay).
+If a video has no speech, it is still indexed visually (and vice versa);
+the job shows a warning.
+
+From the command line instead:
+```bash
+python scripts/ingest_youtube.py https://www.youtube.com/watch?v=VIDEO_ID
+```
+
+Limits are set in `backend/config.py` (`YOUTUBE_MAX_HEIGHT`,
+`YOUTUBE_MAX_DURATION_SECONDS`, default 2 hours). Live streams and playlists
+are not accepted; only download videos you have the right to use.
+
+## Jumping to the Exact Moment
+
+Every search result, summary point and answer citation is a link to its
+moment. Clicking it opens the right video in the player and starts playback
+at that timestamp. Links have the form `/app/#v=<video_id>&t=<seconds>`,
+so they can be copied, bookmarked or opened in a new tab, and
+**Copy link to this moment** under the player shares the current position.
+
+The `/video/{video_id}` endpoint answers HTTP Range requests, which lets the
+browser seek straight to the timestamp without downloading the whole file
+first (this is why `fastapi` is pinned to 0.115.6 or later).
+
+## AI Summaries and Questions (Claude API)
+
+Requires an Anthropic API key:
+```bash
+export ANTHROPIC_API_KEY=sk-ant-...      # Windows: set ANTHROPIC_API_KEY=...
+```
+
+Under the player, for the selected video:
+- **Summarize video**: short summary plus the main topics with timestamps.
+- **Key takeaways**: the 3–8 most important points with timestamps.
+- **Summarize section**: summary of a time range (type `mm:ss` times or
+  press **now** to take the player's current time).
+
+In the search panel, **Ask AI** answers a question using only transcript
+passages found by text search (optionally only from the selected video).
+Each claim in the answer links to the passage it came from.
+
+How the answers stay grounded:
+- The model only sees transcript text, with a timestamp on every line.
+- Summary timestamps are snapped to a real transcript segment.
+- Answer citations refer to the numbered passages that were retrieved, and
+  the timestamps come from those passages, not from the model.
+- If the passages don't cover the question, the answer says so.
+
+Whole-video summaries/takeaways are cached in `data/metadata/` (pass
+`"force": true` to `/summarize` to regenerate). Very long transcripts are
+summarized in parts and then combined. Model and effort are set in
+`backend/config.py` (`LLM_MODEL`, `LLM_EFFORT`).
+
+API endpoints:
+
+| Endpoint | Purpose |
+|---|---|
+| `POST /ingest/youtube` `{"url"}` | Queue a YouTube video for download + indexing |
+| `GET /ingest/jobs`, `GET /ingest/jobs/{job_id}` | Ingestion progress |
+| `POST /summarize` `{"video_id", "mode": "summary"\|"takeaways"\|"section", "start", "end"}` | LLM summary |
+| `POST /ask` `{"question", "video_id"?}` | Answer grounded in transcript passages |
 
 ## How Text Search Works
 
@@ -201,7 +282,6 @@ simple static server). Make sure the backend from step 4 is running first.
 ## Future Improvements
 
 - Multimodal score fusion (combine text + visual relevance).
-- RAG: feed retrieved segments into an LLM for a natural-language answer.
 - Reranking, query expansion, temporal context windows.
 - Formal evaluation: Precision@K, Recall@K, timestamp accuracy, latency.
 - Larger/better embedding models if hardware allows.
