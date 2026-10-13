@@ -15,6 +15,9 @@ weights from Hugging Face). See requirements.txt.
 import os
 import json
 import sys
+import wave
+
+import numpy as np
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
@@ -31,6 +34,34 @@ _model = None  # lazy-loaded singleton, so the (large) model loads only once per
 
 class TranscriptionError(Exception):
     pass
+
+
+def load_wav_16k_mono(audio_path: str) -> np.ndarray:
+    """
+    Reads the 16 kHz mono 16-bit WAV written by video_processor.extract_audio
+    into the float32 array Whisper expects (values in [-1, 1]).
+
+    We pass this array to faster-whisper instead of the file path, so it
+    doesn't have to decode audio itself through PyAV -- newer PyAV releases
+    removed an argument faster-whisper still passes, which crashes with
+    "open() got an unexpected keyword argument 'metadata_errors'".
+    """
+    try:
+        with wave.open(audio_path, "rb") as wav:
+            channels, width, rate = wav.getnchannels(), wav.getsampwidth(), wav.getframerate()
+            frames = wav.readframes(wav.getnframes())
+    except (wave.Error, EOFError) as e:
+        raise TranscriptionError(f"Could not read audio file '{audio_path}': {e}")
+
+    if width != 2 or rate != 16000:
+        raise TranscriptionError(
+            f"Expected 16 kHz 16-bit audio in '{audio_path}', got {rate} Hz {8 * width}-bit. "
+            "Delete the file and re-run processing to regenerate it."
+        )
+    audio = np.frombuffer(frames, dtype="<i2").astype(np.float32) / 32768.0
+    if channels > 1:
+        audio = audio.reshape(-1, channels).mean(axis=1)
+    return audio
 
 
 def _get_model():
@@ -85,11 +116,12 @@ def transcribe_audio(audio_path: str, video_id: str, force: bool = False) -> str
     if os.path.isfile(output_path) and not force:
         return output_path
 
+    audio = load_wav_16k_mono(audio_path)
     model = _get_model()
 
     try:
         segments_iter, info = model.transcribe(
-            audio_path,
+            audio,
             task=WHISPER_TASK,
             vad_filter=True,  # skip silent stretches, avoids hallucinated text
         )

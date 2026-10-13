@@ -137,6 +137,37 @@ class TestYouTubeDownload(unittest.TestCase):
         self.assertIsNone(self.module.find_local_video(self.video_id))
 
 
+class TestWavLoader(unittest.TestCase):
+    """Audio is read without PyAV (newer PyAV breaks faster-whisper's decoder)."""
+
+    def setUp(self):
+        import tempfile
+        self.dir = tempfile.mkdtemp()
+
+    def tearDown(self):
+        shutil.rmtree(self.dir)
+
+    def make_wav(self, name, rate=16000, channels=1):
+        path = os.path.join(self.dir, name)
+        subprocess.run(["ffmpeg", "-y", "-v", "error", "-f", "lavfi", "-i", "sine=frequency=440:duration=1",
+                        "-ar", str(rate), "-ac", str(channels), "-c:a", "pcm_s16le", path], check=True)
+        return path
+
+    def test_reads_16k_mono_as_float32(self):
+        from backend.services.transcriber import load_wav_16k_mono
+        audio = load_wav_16k_mono(self.make_wav("a.wav"))
+        self.assertEqual(audio.dtype.name, "float32")
+        self.assertEqual(len(audio), 16000)
+        self.assertLessEqual(float(abs(audio).max()), 1.0)
+        self.assertGreater(float(abs(audio).max()), 0.05)
+
+    def test_stereo_is_mixed_down_and_wrong_rate_rejected(self):
+        from backend.services.transcriber import load_wav_16k_mono, TranscriptionError
+        self.assertEqual(len(load_wav_16k_mono(self.make_wav("s.wav", channels=2))), 16000)
+        with self.assertRaises(TranscriptionError):
+            load_wav_16k_mono(self.make_wav("r.wav", rate=44100))
+
+
 class TestIndexStatus(unittest.TestCase):
     """A failed indexing run is remembered on disk and reported per video."""
     VIDEO_ID = "unittest_status_video"
