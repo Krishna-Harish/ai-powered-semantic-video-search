@@ -44,11 +44,18 @@ def _get_clip():
                 "open_clip_torch / torch is not installed. "
                 "Run: pip install open_clip_torch torch"
             )
-        _model, _, _preprocess = open_clip.create_model_and_transforms(
-            CLIP_MODEL_NAME, pretrained=CLIP_PRETRAINED
-        )
-        _tokenizer = open_clip.get_tokenizer(CLIP_MODEL_NAME)
-        _model.eval()
+        try:
+            model, _, preprocess = open_clip.create_model_and_transforms(
+                CLIP_MODEL_NAME, pretrained=CLIP_PRETRAINED
+            )
+            tokenizer = open_clip.get_tokenizer(CLIP_MODEL_NAME)
+        except Exception as e:
+            raise VisualEmbeddingError(
+                f"Could not load the CLIP '{CLIP_MODEL_NAME}' model. The first run downloads it "
+                f"from Hugging Face, so it needs internet access. ({type(e).__name__}: {e})"
+            )
+        model.eval()
+        _model, _preprocess, _tokenizer = model, preprocess, tokenizer
     return _model, _preprocess, _tokenizer
 
 

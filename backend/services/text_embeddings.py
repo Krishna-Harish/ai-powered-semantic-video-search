@@ -36,7 +36,13 @@ def _get_model():
                 "sentence-transformers is not installed. "
                 "Run: pip install sentence-transformers"
             )
-        _model = SentenceTransformer(TEXT_EMBEDDING_MODEL)
+        try:
+            _model = SentenceTransformer(TEXT_EMBEDDING_MODEL)
+        except Exception as e:
+            raise TextEmbeddingError(
+                f"Could not load the '{TEXT_EMBEDDING_MODEL}' model. The first run downloads it "
+                f"from Hugging Face, so it needs internet access. ({type(e).__name__}: {e})"
+            )
     return _model
 
 

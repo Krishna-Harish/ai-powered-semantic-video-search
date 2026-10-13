@@ -43,11 +43,17 @@ def _get_model():
             raise TranscriptionError(
                 "faster-whisper is not installed. Run: pip install faster-whisper"
             )
-        _model = WhisperModel(
-            WHISPER_MODEL_SIZE,
-            device=WHISPER_DEVICE,
-            compute_type=WHISPER_COMPUTE_TYPE,
-        )
+        try:
+            _model = WhisperModel(
+                WHISPER_MODEL_SIZE,
+                device=WHISPER_DEVICE,
+                compute_type=WHISPER_COMPUTE_TYPE,
+            )
+        except Exception as e:
+            raise TranscriptionError(
+                f"Could not load the Whisper '{WHISPER_MODEL_SIZE}' model. The first run downloads it "
+                f"from Hugging Face, so it needs internet access. ({type(e).__name__}: {e})"
+            )
     return _model
 
 
