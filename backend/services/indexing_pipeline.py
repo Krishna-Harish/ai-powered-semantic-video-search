@@ -19,10 +19,13 @@ considered not indexed.
 
 import os
 import sys
+import json
+import time
 import threading
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
+from backend.config import EMBEDDINGS_DIR, METADATA_DIR
 from backend.services.video_processor import process_video, VideoProcessingError
 from backend.services.transcriber import transcribe_audio, TranscriptionError
 from backend.services.transcript_chunker import chunk_transcript, ChunkingError
@@ -40,6 +43,41 @@ class IndexingError(Exception):
     pass
 
 
+def _status_path(video_id: str) -> str:
+    return os.path.join(METADATA_DIR, f"{video_id}_index_status.json")
+
+
+def _save_status(video_id: str, error=None, warnings=()):
+    """Remembers the last indexing outcome on disk, so the reason a video
+    isn't searchable survives a server restart."""
+    with open(_status_path(video_id), "w", encoding="utf-8") as f:
+        json.dump({"error": error, "warnings": list(warnings), "time": time.time()}, f, indent=2)
+
+
+def get_index_state(video_id: str) -> dict:
+    """{"text_indexed", "visual_indexed", "index_problem"} for one video."""
+    state = {
+        "text_indexed": os.path.isfile(os.path.join(EMBEDDINGS_DIR, f"{video_id}_text.npy")),
+        "visual_indexed": os.path.isfile(os.path.join(EMBEDDINGS_DIR, f"{video_id}_visual.npy")),
+        "index_problem": None,
+    }
+    try:
+        with open(_status_path(video_id), "r", encoding="utf-8") as f:
+            status = json.load(f)
+        problems = ([status["error"]] if status.get("error") else []) + status.get("warnings", [])
+        state["index_problem"] = " | ".join(problems) or None
+    except (OSError, ValueError, KeyError):
+        pass
+    return state
+
+
+def _describe(e: Exception) -> str:
+    """Our own errors already read well; for library errors include the type."""
+    if isinstance(e, (TranscriptionError, ChunkingError, TextEmbeddingError, VisualEmbeddingError)):
+        return str(e)
+    return f"{type(e).__name__}: {e}"
+
+
 def index_video(video_path: str, video_id: str, progress=None, force: bool = False) -> dict:
     """
     Processes one video end-to-end and rebuilds the search indexes.
@@ -51,7 +89,18 @@ def index_video(video_path: str, video_id: str, progress=None, force: bool = Fal
              "visual_indexed", "warnings": [...]}.
     Raises IndexingError if the video could not be processed at all, or if
     neither text nor visual indexing succeeded.
+    The outcome is also saved to data/metadata/<video_id>_index_status.json.
     """
+    try:
+        result = _index_video(video_path, video_id, progress, force)
+    except IndexingError as e:
+        _save_status(video_id, error=str(e))
+        raise
+    _save_status(video_id, warnings=result["warnings"])
+    return result
+
+
+def _index_video(video_path, video_id, progress, force):
     def report(stage, message):
         if progress is not None:
             progress(stage, message)
@@ -73,16 +122,16 @@ def index_video(video_path: str, video_id: str, progress=None, force: bool = Fal
         report("embedding_text", "Generating text embeddings...")
         embed_video_chunks(video_id, force=force)
         text_ok = True
-    except (TranscriptionError, ChunkingError, TextEmbeddingError) as e:
-        warnings.append(f"Text indexing skipped: {e}")
+    except Exception as e:  # any failure here must not stop visual indexing
+        warnings.append(f"Text indexing failed: {_describe(e)}")
 
     visual_ok = False
     try:
         report("embedding_frames", "Generating visual (CLIP) embeddings...")
         embed_video_frames(video_id, force=force)
         visual_ok = True
-    except VisualEmbeddingError as e:
-        warnings.append(f"Visual indexing skipped: {e}")
+    except Exception as e:
+        warnings.append(f"Visual indexing failed: {_describe(e)}")
 
     if not text_ok and not visual_ok:
         raise IndexingError("Neither text nor visual indexing succeeded. " + " | ".join(warnings))

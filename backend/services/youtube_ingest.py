@@ -226,13 +226,26 @@ def ingest_youtube_url(url: str, progress=None, force: bool = False) -> dict:
 # Background jobs
 # ---------------------------------------------------------------------------
 
+def reindex_local_video(video_id: str, progress=None, force: bool = False) -> dict:
+    """Re-runs the indexing pipeline for a video already in data/videos/."""
+    video_path = find_local_video(video_id)
+    if video_path is None:
+        raise YouTubeIngestError(f"Video '{video_id}' not found in data/videos/.")
+    try:
+        result = index_video(video_path, video_id, progress=progress, force=force)
+    except IndexingError as e:
+        raise YouTubeIngestError(str(e))
+    return {**result, "title": load_video_info(video_id).get("title")}
+
+
 class IngestJobManager:
     """In-memory registry of ingestion jobs, executed one at a time."""
 
     ACTIVE_STATUSES = ("queued", "running")
 
-    def __init__(self, runner=ingest_youtube_url):
+    def __init__(self, runner=ingest_youtube_url, reindex_runner=reindex_local_video):
         self._runner = runner
+        self._reindex_runner = reindex_runner
         self._jobs = {}
         self._lock = threading.Lock()
         self._executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="ingest")
@@ -240,7 +253,19 @@ class IngestJobManager:
     def submit(self, url: str, force: bool = False) -> dict:
         youtube_id = parse_youtube_id(url)  # validate before queueing
         video_id = video_id_for_youtube(youtube_id)
+        source = canonical_youtube_url(youtube_id)
+        return self._enqueue(video_id, source, lambda progress: self._runner(source, progress=progress, force=force))
 
+    def submit_reindex(self, video_id: str, force: bool = False) -> dict:
+        """Indexes (again) a video that is already downloaded; no new download."""
+        if find_local_video(video_id) is None:
+            raise ValueError(f"Video '{video_id}' not found.")
+        label = load_video_info(video_id).get("source_url") or video_id
+        return self._enqueue(
+            video_id, label, lambda progress: self._reindex_runner(video_id, progress=progress, force=force)
+        )
+
+    def _enqueue(self, video_id: str, url: str, work) -> dict:
         with self._lock:
             # Don't queue the same video twice while it's still being processed.
             for job in self._jobs.values():
@@ -250,7 +275,7 @@ class IngestJobManager:
             now = time.time()
             job = {
                 "job_id": uuid.uuid4().hex[:12],
-                "url": canonical_youtube_url(youtube_id),
+                "url": url,
                 "video_id": video_id,
                 "status": "queued",
                 "stage": "queued",
@@ -263,7 +288,7 @@ class IngestJobManager:
             }
             self._jobs[job["job_id"]] = job
 
-        self._executor.submit(self._run, job["job_id"], force)
+        self._executor.submit(self._run, job["job_id"], work)
         return dict(job)
 
     def get(self, job_id: str):
@@ -280,15 +305,14 @@ class IngestJobManager:
         with self._lock:
             self._jobs[job_id].update(fields, updated_at=time.time())
 
-    def _run(self, job_id: str, force: bool):
-        job = self.get(job_id)
+    def _run(self, job_id: str, work):
         self._update(job_id, status="running", stage="starting", message="Starting...")
 
         def progress(stage, message):
             self._update(job_id, stage=stage, message=message)
 
         try:
-            result = self._runner(job["url"], progress=progress, force=force)
+            result = work(progress)
         except Exception as e:  # report every failure on the job, never crash the worker
             self._update(job_id, status="failed", stage="failed", message="Ingestion failed.", error=str(e))
             return
@@ -297,7 +321,7 @@ class IngestJobManager:
             job_id,
             status="completed",
             stage="completed",
-            message="Video is indexed and searchable.",
+            message="Indexed, but some steps failed:" if result.get("warnings") else "Video is indexed and searchable.",
             title=result.get("title"),
             warnings=result.get("warnings", []),
         )

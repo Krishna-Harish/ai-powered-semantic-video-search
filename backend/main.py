@@ -10,6 +10,7 @@ FastAPI backend exposing:
     POST /ingest/youtube   -- download + index a YouTube video (background job)
     GET  /ingest/jobs      -- list ingestion jobs
     GET  /ingest/jobs/{job_id} -- poll one ingestion job
+    POST /ingest/reindex/{video_id} -- (re)index an already-downloaded video
     POST /summarize        -- LLM summary / key takeaways / section summary
     POST /ask              -- LLM answer grounded in transcript passages
                               (Gemini free tier or Claude, see services/llm.py)
@@ -48,6 +49,9 @@ from backend.models.schemas import (
 from backend.services.search import text_search, visual_search
 from backend.services.video_processor import get_video_duration, VideoProcessingError
 from backend.services.youtube_ingest import job_manager, load_video_info
+from backend.services.indexing_pipeline import get_index_state
+from backend.services.text_index import TextIndexError
+from backend.services.visual_index import VisualIndexError
 from backend.services.summarizer import (
     summarize,
     answer_question,
@@ -91,6 +95,7 @@ def list_videos():
             duration_seconds=duration,
             title=info.get("title"),
             source_url=info.get("source_url"),
+            **get_index_state(video_id),
         ))
 
     return VideoListResponse(videos=videos)
@@ -103,6 +108,8 @@ def search_text_endpoint(request: TextSearchRequest):
         return result
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+    except TextIndexError as e:
+        raise HTTPException(status_code=409, detail=str(e))
     except Exception as e:
         # Covers: text index not built yet, model not installed, etc.
         raise HTTPException(status_code=500, detail=f"Text search failed: {e}")
@@ -115,6 +122,8 @@ def search_visual_endpoint(request: VisualSearchRequest):
         return result
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+    except VisualIndexError as e:
+        raise HTTPException(status_code=409, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Visual search failed: {e}")
 
@@ -167,6 +176,16 @@ def ingest_youtube_endpoint(request: YouTubeIngestRequest):
         raise HTTPException(status_code=400, detail=str(e))
 
 
+@app.post("/ingest/reindex/{video_id}", response_model=IngestJob, status_code=202)
+def reindex_endpoint(video_id: str, force: bool = False):
+    """Runs transcription/embedding/indexing again for a video already in data/videos/."""
+    _check_safe_name(video_id, "video id")
+    try:
+        return job_manager.submit_reindex(video_id, force=force)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
 @app.get("/ingest/jobs", response_model=IngestJobListResponse)
 def list_ingest_jobs():
     return {"jobs": job_manager.list()}
@@ -185,6 +204,8 @@ def _llm_http_error(e: Exception) -> HTTPException:
         return HTTPException(status_code=400, detail=str(e))
     if isinstance(e, TranscriptNotFoundError):
         return HTTPException(status_code=404, detail=str(e))
+    if isinstance(e, (TextIndexError, VisualIndexError)):
+        return HTTPException(status_code=409, detail=str(e))
     if isinstance(e, LLMUnavailableError):
         return HTTPException(status_code=503, detail=str(e))
     if isinstance(e, SummaryError):

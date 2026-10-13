@@ -379,3 +379,26 @@ video {
   .panel, .ingest-panel, .video-panel, .search-panel { padding: 1rem; }
   .ingest-form { flex-direction: column; }
 }
+
+/* ---- "Not indexed" notice ---- */
+
+.index-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  background: #2a2412;
+  border: 1px solid #6b5a1f;
+  border-radius: var(--radius-sm);
+  padding: 0.75rem 1rem;
+  margin-bottom: 0.875rem;
+}
+
+.index-banner[hidden] { display: none; }
+.index-banner-text { margin: 0; color: var(--warning); font-weight: 600; font-size: 0.95rem; }
+.index-banner-reason { margin: 0.25rem 0 0; color: var(--text-muted); font-size: 0.85rem; overflow-wrap: anywhere; }
+.index-banner .primary-btn:disabled { opacity: 0.6; cursor: wait; }
+
+@media (max-width: 600px) {
+  .index-banner { flex-direction: column; align-items: stretch; }
+}

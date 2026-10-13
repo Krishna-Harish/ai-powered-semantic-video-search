@@ -86,6 +86,16 @@ def build_text_index() -> str:
     return INDEX_PATH
 
 
+def require_text_index():
+    """Raises TextIndexError if no text index has been built yet (checked before
+    loading any model, so the error names the real problem)."""
+    if not os.path.isfile(INDEX_PATH) or not os.path.isfile(METADATA_PATH):
+        raise TextIndexError(
+            "No video has been indexed for text search yet (no transcript). "
+            "Select the video and click 'Index now', or run scripts/build_text_index.py."
+        )
+
+
 def search_text_index(query_vector: np.ndarray, top_k: int = 5) -> list:
     """
     Searches the text FAISS index with a single query vector
@@ -99,10 +109,7 @@ def search_text_index(query_vector: np.ndarray, top_k: int = 5) -> list:
     except ImportError:
         raise TextIndexError("faiss is not installed. Run: pip install faiss-cpu")
 
-    if not os.path.isfile(INDEX_PATH) or not os.path.isfile(METADATA_PATH):
-        raise TextIndexError(
-            "Text index not found. Run build_text_index() before searching."
-        )
+    require_text_index()
 
     index = faiss.read_index(INDEX_PATH)
     with open(METADATA_PATH, "r", encoding="utf-8") as f:

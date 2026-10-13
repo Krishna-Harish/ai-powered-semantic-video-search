@@ -51,6 +51,9 @@ class VideoInfo(BaseModel):
     duration_seconds: Optional[float] = None
     title: Optional[str] = None        # set for videos ingested from YouTube
     source_url: Optional[str] = None
+    text_indexed: bool = False         # has a transcript + text embeddings
+    visual_indexed: bool = False       # has CLIP frame embeddings
+    index_problem: Optional[str] = None  # why the last indexing run failed, if it did
 
 
 class VideoListResponse(BaseModel):

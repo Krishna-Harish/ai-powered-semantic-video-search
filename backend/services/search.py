@@ -14,9 +14,9 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(
 
 from backend.config import DEFAULT_TOP_K, MIN_SIMILARITY_SCORE
 from backend.services.text_embeddings import embed_text_query
-from backend.services.text_index import search_text_index, TextIndexError
+from backend.services.text_index import search_text_index, require_text_index, TextIndexError
 from backend.services.visual_embeddings import embed_text_query_clip
-from backend.services.visual_index import search_visual_index, VisualIndexError
+from backend.services.visual_index import search_visual_index, require_visual_index, VisualIndexError
 
 
 def _format_timestamp(seconds: float) -> str:
@@ -36,6 +36,7 @@ def text_search(query: str, top_k: int = None) -> dict:
 
     top_k = top_k or DEFAULT_TOP_K
 
+    require_text_index()
     query_vector = embed_text_query(query)
     raw_results = search_text_index(query_vector, top_k=top_k)
 
@@ -56,6 +57,7 @@ def visual_search(query: str, top_k: int = None) -> dict:
 
     top_k = top_k or DEFAULT_TOP_K
 
+    require_visual_index()
     query_vector = embed_text_query_clip(query)
     raw_results = search_visual_index(query_vector, top_k=top_k)
 

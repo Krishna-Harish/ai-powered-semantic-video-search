@@ -137,6 +137,65 @@ class TestYouTubeDownload(unittest.TestCase):
         self.assertIsNone(self.module.find_local_video(self.video_id))
 
 
+class TestIndexStatus(unittest.TestCase):
+    """A failed indexing run is remembered on disk and reported per video."""
+    VIDEO_ID = "unittest_status_video"
+
+    def setUp(self):
+        from backend.services import indexing_pipeline
+        self.pipeline = indexing_pipeline
+        self.video_path = os.path.join(VIDEOS_DIR, f"{self.VIDEO_ID}.mp4")
+        subprocess.run([
+            "ffmpeg", "-y", "-f", "lavfi", "-i", "testsrc=duration=3:size=160x120:rate=5",
+            "-f", "lavfi", "-i", "sine=frequency=440:duration=3",
+            "-c:v", "libx264", "-c:a", "aac", "-shortest", self.video_path, "-loglevel", "error",
+        ], check=True)
+
+    def tearDown(self):
+        from backend.config import AUDIO_DIR, FRAMES_DIR
+        for path in [self.video_path, os.path.join(AUDIO_DIR, f"{self.VIDEO_ID}.wav"),
+                     os.path.join(METADATA_DIR, f"{self.VIDEO_ID}_frames.json"),
+                     self.pipeline._status_path(self.VIDEO_ID)]:
+            if os.path.isfile(path):
+                os.remove(path)
+        shutil.rmtree(os.path.join(FRAMES_DIR, self.VIDEO_ID), ignore_errors=True)
+
+    def test_unexpected_library_errors_are_recorded_not_raised_raw(self):
+        def boom(*a, **k):
+            raise RuntimeError("ctranslate2 exploded")
+
+        def no_clip(*a, **k):
+            raise self.pipeline.VisualEmbeddingError("CLIP missing")
+
+        with mock.patch.object(self.pipeline, "transcribe_audio", boom), \
+             mock.patch.object(self.pipeline, "embed_video_frames", no_clip):
+            with self.assertRaises(self.pipeline.IndexingError):
+                self.pipeline.index_video(self.video_path, self.VIDEO_ID)
+
+        state = self.pipeline.get_index_state(self.VIDEO_ID)
+        self.assertFalse(state["text_indexed"])
+        self.assertFalse(state["visual_indexed"])
+        self.assertIn("RuntimeError: ctranslate2 exploded", state["index_problem"])
+        self.assertIn("CLIP missing", state["index_problem"])
+
+    def test_reindex_job_for_local_video(self):
+        calls = []
+
+        def reindex(video_id, progress, force):
+            calls.append(video_id)
+            return {"warnings": []}
+
+        manager = IngestJobManager(runner=None, reindex_runner=reindex)
+        job = manager.submit_reindex(self.VIDEO_ID)
+        deadline = time.time() + 5
+        while manager.get(job["job_id"])["status"] not in ("completed", "failed") and time.time() < deadline:
+            time.sleep(0.02)
+        self.assertEqual(manager.get(job["job_id"])["status"], "completed")
+        self.assertEqual(calls, [self.VIDEO_ID])
+        with self.assertRaises(ValueError):
+            manager.submit_reindex("no_such_video")
+
+
 class TestIngestJobManager(unittest.TestCase):
     URL = "https://youtu.be/dQw4w9WgXcQ"
 
@@ -477,6 +536,24 @@ class TestApi(unittest.TestCase):
             with mock.patch.object(summarizer, "load_segments", return_value=[{"start": 0, "end": 1, "text": "hi"}]):
                 res = self.client.post("/summarize", json={"video_id": "x", "force": True})
         self.assertEqual(res.status_code, 503)
+
+    def test_search_without_index_explains_instead_of_loading_models(self):
+        from backend.services import text_index, visual_index
+        with mock.patch.object(text_index, "INDEX_PATH", "/nonexistent/text.index"), \
+             mock.patch.object(visual_index, "INDEX_PATH", "/nonexistent/visual.index"), \
+             mock.patch("backend.services.search.embed_text_query", side_effect=AssertionError("model loaded")), \
+             mock.patch("backend.services.search.embed_text_query_clip", side_effect=AssertionError("model loaded")):
+            for path in ("/search/text", "/search/visual"):
+                res = self.client.post(path, json={"query": "ports"})
+                self.assertEqual(res.status_code, 409)
+                self.assertIn("Index now", res.json()["detail"])
+            res = self.client.post("/ask", json={"question": "ports?"})
+            self.assertEqual(res.status_code, 409)
+
+    def test_videos_report_index_state(self):
+        video = next(v for v in self.client.get("/videos").json()["videos"] if v["video_id"] == self.VIDEO_ID)
+        self.assertFalse(video["text_indexed"])
+        self.assertIn("index_problem", video)
 
     def test_frontend_is_served(self):
         res = self.client.get("/app/")

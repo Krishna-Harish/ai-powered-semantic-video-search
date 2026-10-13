@@ -9,6 +9,10 @@ const API_BASE = window.location.pathname.startsWith("/app")
 const videoSelect = document.getElementById("videoSelect");
 const videoPlayer = document.getElementById("videoPlayer");
 const emptyVideo = document.getElementById("emptyVideo");
+const indexBanner = document.getElementById("indexBanner");
+const indexBannerText = document.getElementById("indexBannerText");
+const indexBannerReason = document.getElementById("indexBannerReason");
+const reindexBtn = document.getElementById("reindexBtn");
 const nowPlaying = document.getElementById("nowPlaying");
 const copyLinkBtn = document.getElementById("copyLinkBtn");
 const modeButtons = document.querySelectorAll(".mode-btn");
@@ -142,6 +146,7 @@ async function loadVideos(selectVideoId) {
     const target = videosById[previous] ? previous : data.videos[0].video_id;
     if (target !== videoSelect.dataset.active) setActiveVideo(target);
     videoSelect.value = target;
+    updateIndexBanner();
   } catch (err) {
     emptyVideo.textContent = `Could not reach the backend at ${API_BASE}. Is it running?`;
     statusMsg.textContent = `Could not reach the backend at ${API_BASE}. Is it running? (${err.message})`;
@@ -155,7 +160,47 @@ function setActiveVideo(videoId) {
   nowPlaying.textContent = "";
   summaryOutput.innerHTML = "";
   summaryStatus.textContent = "";
+  updateIndexBanner();
 }
+
+// Warns when the selected video can't be searched/summarized yet, with the
+// reason saved by the last indexing attempt and a button to retry it.
+function updateIndexBanner() {
+  const v = videosById[videoSelect.value];
+  if (!v || (v.text_indexed && v.visual_indexed)) {
+    indexBanner.hidden = true;
+    return;
+  }
+  if (!v.text_indexed && !v.visual_indexed) {
+    indexBannerText.textContent = "This video isn't indexed yet, so search, summaries and Ask AI can't use it.";
+  } else if (!v.text_indexed) {
+    indexBannerText.textContent = "This video has no transcript, so text search, summaries and Ask AI can't use it.";
+  } else {
+    indexBannerText.textContent = "This video isn't indexed for visual search.";
+  }
+  indexBannerReason.textContent = v.index_problem ? `Last attempt: ${v.index_problem}` : "";
+  const busy = Object.values(jobs).some(
+    (j) => j.video_id === v.video_id && (j.status === "queued" || j.status === "running")
+  );
+  reindexBtn.disabled = busy;
+  reindexBtn.textContent = busy ? "Indexing..." : "Index now";
+  indexBanner.hidden = false;
+}
+
+reindexBtn.addEventListener("click", async () => {
+  const videoId = videoSelect.value;
+  if (!videoId) return;
+  reindexBtn.disabled = true;
+  try {
+    const res = await fetch(`${API_BASE}/ingest/reindex/${encodeURIComponent(videoId)}`, { method: "POST" });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.detail || `Server returned ${res.status}`);
+    trackJob(data);
+  } catch (err) {
+    indexBannerReason.textContent = `Could not start indexing: ${err.message}`;
+  }
+  updateIndexBanner();
+});
 
 videoSelect.addEventListener("change", () => {
   setActiveVideo(videoSelect.value);
@@ -439,6 +484,7 @@ const jobs = {}; // job_id -> latest job state
 const pollers = {};
 
 function renderJobs() {
+  updateIndexBanner();
   const sorted = Object.values(jobs).sort((a, b) => b.created_at - a.created_at);
   jobsList.innerHTML = "";
   sorted.forEach((job) => {

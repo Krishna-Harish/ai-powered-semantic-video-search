@@ -82,6 +82,16 @@ def build_visual_index() -> str:
     return INDEX_PATH
 
 
+def require_visual_index():
+    """Raises VisualIndexError if no visual index has been built yet (checked before
+    loading any model, so the error names the real problem)."""
+    if not os.path.isfile(INDEX_PATH) or not os.path.isfile(METADATA_PATH):
+        raise VisualIndexError(
+            "No video has been indexed for visual search yet. "
+            "Select the video and click 'Index now', or run scripts/build_visual_index.py."
+        )
+
+
 def search_visual_index(query_vector: np.ndarray, top_k: int = 5) -> list:
     """
     Searches the visual FAISS index with a CLIP text-query vector.
@@ -92,10 +102,7 @@ def search_visual_index(query_vector: np.ndarray, top_k: int = 5) -> list:
     except ImportError:
         raise VisualIndexError("faiss is not installed. Run: pip install faiss-cpu")
 
-    if not os.path.isfile(INDEX_PATH) or not os.path.isfile(METADATA_PATH):
-        raise VisualIndexError(
-            "Visual index not found. Run build_visual_index() before searching."
-        )
+    require_visual_index()
 
     index = faiss.read_index(INDEX_PATH)
     with open(METADATA_PATH, "r") as f:

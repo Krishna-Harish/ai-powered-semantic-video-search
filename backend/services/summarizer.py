@@ -75,8 +75,8 @@ def load_segments(video_id: str) -> list:
     path = os.path.join(TRANSCRIPTS_DIR, f"{video_id}.json")
     if not os.path.isfile(path):
         raise TranscriptNotFoundError(
-            f"No transcript for '{video_id}'. Index the video first (scripts/build_text_index.py "
-            "or the YouTube ingestion)."
+            "This video has no transcript yet, so it can't be summarized. "
+            "Click 'Index now' above the player to transcribe it."
         )
     with open(path, "r", encoding="utf-8") as f:
         segments = json.load(f).get("segments", [])
@@ -312,8 +312,9 @@ _ANSWER_SYSTEM = (
 def retrieve_passages(question: str, video_id: str = None, top_k: int = None) -> list:
     """Semantic search over transcript chunks, optionally restricted to one video."""
     from backend.services.text_embeddings import embed_text_query
-    from backend.services.text_index import search_text_index
+    from backend.services.text_index import search_text_index, require_text_index
 
+    require_text_index()
     top_k = top_k or LLM_QA_TOP_K
     # When filtering to one video, over-fetch so enough of its chunks survive the filter.
     fetch_k = top_k * 10 if video_id else top_k
