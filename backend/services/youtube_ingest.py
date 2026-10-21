@@ -169,6 +169,11 @@ def download_youtube_video(url: str, progress=None) -> dict:
         "quiet": True,
         "no_warnings": True,
         "noprogress": True,
+        "no_color": True,  # keep ANSI colour codes out of error messages shown in the UI
+        # Slow or flaky networks: wait longer and retry instead of failing on one timeout.
+        "socket_timeout": 60,
+        "retries": 10,
+        "fragment_retries": 10,
         "progress_hooks": [hook],
     }
 
